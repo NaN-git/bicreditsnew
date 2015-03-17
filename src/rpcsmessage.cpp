@@ -3,7 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "main.h"
-#include "bitcoinrpc.h"
+#include "rpcserver.h"
 
 #include <boost/lexical_cast.hpp>
 
@@ -168,7 +168,7 @@ Value smsglocalkeys(const Array& params, bool fHelp)
                 && !it->fReceiveEnabled)
                 continue;
             
-            CBitcoinAddress coinAddress(it->sAddress);
+            CBitcreditAddress coinAddress(it->sAddress);
             if (!coinAddress.IsValid())
                 continue;
             
@@ -307,7 +307,7 @@ Value smsglocalkeys(const Array& params, bool fHelp)
             if (!IsMine(*pwalletMain, entry.first))
                 continue;
             
-            CBitcoinAddress coinAddress(entry.first);
+            CBitcreditAddress coinAddress(entry.first);
             if (!coinAddress.IsValid())
                 continue;
             
@@ -462,7 +462,7 @@ Value smsggetpubkey(const Array& params, bool fHelp)
             return result;
     };
     
-    CBitcoinAddress coinAddress(address);
+    CBitcreditAddress coinAddress(address);
     
     
     CKeyID keyID;

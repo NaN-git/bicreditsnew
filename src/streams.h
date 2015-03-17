@@ -21,6 +21,13 @@
 #include <utility>
 #include <vector>
 
+
+struct ser_streamplaceholder
+{
+    int nType;
+    int nVersion;
+};
+
 /** Double ended buffer combining vector and stream-like interfaces.
  *
  * >> and << read and write unformatted data using the above serialization templates.

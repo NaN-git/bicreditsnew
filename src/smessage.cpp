@@ -592,7 +592,7 @@ void ThreadSecureMsg(void* parg)
         nThreadCount++;
     }
     // -- bucket management thread
-    RenameThread("shadowcoin-smsg"); // Make this thread recognisable
+    RenameThread("bitcredit-smsg"); // Make this thread recognisable
 
     while (fSecMsgEnabled)
     {
@@ -697,7 +697,7 @@ void ThreadSecureMsgPow(void* parg)
         nThreadCount++;
     }
     // -- proof of work thread
-    RenameThread("shadowcoin-smsg-pow"); // Make this thread recognisable
+    RenameThread("bitcredit-smsg-pow"); // Make this thread recognisable
 
     int rv;
     std::vector<unsigned char> vchKey;
@@ -944,7 +944,7 @@ int SecureMsgAddWalletAddresses()
 
         // TODO: skip addresses for stealth transactions
 
-        CBitcoinAddress coinAddress(entry.first);
+        CBitcreditAddress coinAddress(entry.first);
         if (!coinAddress.IsValid())
             continue;
 
@@ -1998,7 +1998,7 @@ static bool ScanBlock(CBlock& block, CTxDB& txdb, SecMsgDB& addrpkdb,
                     };
 
 
-                    CBitcoinAddress coinAddress(addressRet);
+                    CBitcreditAddress coinAddress(addressRet);
                     CKeyID hashKey;
                     if (!coinAddress.GetKeyID(hashKey))
                     {
@@ -2517,7 +2517,7 @@ int SecureMsgScanMessage(unsigned char *pHeader, unsigned char *pPayload, uint32
         if (!it->fReceiveEnabled)
             continue;
 
-        CBitcoinAddress coinAddress(it->sAddress);
+        CBitcreditAddress coinAddress(it->sAddress);
         addressTo = coinAddress.ToString();
 
         if (!it->fReceiveAnon)
@@ -2628,7 +2628,7 @@ int SecureMsgGetLocalPublicKey(std::string& strAddress, std::string& strPublicKe
         4 address not in wallet
     */
 
-    CBitcoinAddress address;
+    CBitcreditAddress address;
     if (!address.SetString(strAddress))
         return 2; // Invalid coin address
 
@@ -2688,7 +2688,7 @@ int SecureMsgAddAddress(std::string& address, std::string& publicKey)
             5 address is invalid
     */
 
-    CBitcoinAddress coinAddress(address);
+    CBitcreditAddress coinAddress(address);
 
     if (!coinAddress.IsValid())
     {
@@ -2719,7 +2719,7 @@ int SecureMsgAddAddress(std::string& address, std::string& publicKey)
     keyT.SetCompressedPubKey();
     CPubKey pubKeyT = keyT.GetPubKey();
 
-    CBitcoinAddress addressT(address);
+    CBitcreditAddress addressT(address);
 
     if (addressT.ToString().compare(address) != 0)
     {
@@ -3314,7 +3314,7 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
 
     bool fSendAnonymous;
-    CBitcoinAddress coinAddrFrom;
+    CBitcreditAddress coinAddrFrom;
     CKeyID ckidFrom;
     CKey keyFrom;
 
@@ -3340,7 +3340,7 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
     };
 
 
-    CBitcoinAddress coinAddrDest;
+    CBitcreditAddress coinAddrDest;
     CKeyID ckidDest;
 
     if (!coinAddrDest.SetString(addressTo))
@@ -3494,7 +3494,7 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
         keyFrom.SignCompact(Hash(message.begin(), message.end()), vchSignature);
 
         // -- Save some bytes by sending address raw
-        vchPayload[0] = (static_cast<CBitcoinAddress_B*>(&coinAddrFrom))->getVersion(); // vchPayload[0] = coinAddrDest.nVersion;
+        vchPayload[0] = (static_cast<CBitcreditAddress_B*>(&coinAddrFrom))->getVersion(); // vchPayload[0] = coinAddrDest.nVersion;
         memcpy(&vchPayload[1], (static_cast<CKeyID_B*>(&ckidFrom))->GetPPN(), 20); // memcpy(&vchPayload[1], ckidDest.pn, 20);
 
         memcpy(&vchPayload[1+20], &vchSignature[0], vchSignature.size());
@@ -3644,7 +3644,7 @@ int SecureMsgSend(std::string& addressFrom, std::string& addressTo, std::string&
         printf("Encrypting message for outbox.\n");
 
     std::string addressOutbox = "None";
-    CBitcoinAddress coinAddrOutbox;
+    CBitcreditAddress coinAddrOutbox;
 
     BOOST_FOREACH(const PAIRTYPE(CTxDestination, std::string)& entry, pwalletMain->mapAddressBook)
     {
@@ -3652,7 +3652,7 @@ int SecureMsgSend(std::string& addressFrom, std::string& addressTo, std::string&
         if (!IsMine(*pwalletMain, entry.first))
             continue;
 
-        const CBitcoinAddress& address = entry.first;
+        const CBitcreditAddress& address = entry.first;
 
         addressOutbox = address.ToString();
         if (!coinAddrOutbox.SetString(addressOutbox)) // test valid
@@ -3755,7 +3755,7 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
 
 
     // -- Fetch private key k, used to decrypt
-    CBitcoinAddress coinAddrDest;
+    CBitcreditAddress coinAddrDest;
     CKeyID ckidDest;
     CKey keyDest;
     if (!coinAddrDest.SetString(address))
@@ -3924,7 +3924,7 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
         uint160 ui160(vchUint160);
         CKeyID ckidFrom(ui160);
 
-        CBitcoinAddress coinAddrFrom;
+        CBitcreditAddress coinAddrFrom;
         coinAddrFrom.Set(ckidFrom);
         if (!coinAddrFrom.IsValid())
         {
@@ -3947,7 +3947,7 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
         };
 
         // -- get address for the compressed public key
-        CBitcoinAddress coinAddrFromSig;
+        CBitcreditAddress coinAddrFromSig;
         coinAddrFromSig.Set(cpkFromSig.GetID());
 
         if (!(coinAddrFrom == coinAddrFromSig))

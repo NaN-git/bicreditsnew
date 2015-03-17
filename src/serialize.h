@@ -775,11 +775,6 @@ inline void SerReadWrite(Stream& s, T& obj, int nType, int nVersion, CSerActionU
 
 
 
-
-
-
-
-
 class CSizeComputer
 {
 protected:
