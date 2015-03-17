@@ -13,6 +13,7 @@
 #include "key.h"
 #include "keystore.h"
 #include "main.h"
+#include "smessage.h"
 #include "ui_interface.h"
 #include "wallet_ismine.h"
 #include "walletdb.h"

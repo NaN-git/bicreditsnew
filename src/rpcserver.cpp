@@ -364,9 +364,24 @@ static const CRPCCommand vRPCCommands[] =
     { "banking",            "sendtobank",             &sendtobank,             false,     false,      true },
     { "banking",         	"sendtoreserve",          &sendtoreserve,          false,     false,      true },
     { "banking",         	"sendtogrants",           &sendtogrants,           false,     false,      true },
-   // { "banking",            "getfrombank",            &getfrombank,            false,     false,      true },
-    //{ "banking",         	"getfromreserve",         &getromreserve,          false,     false,      true },
+ // { "banking",            "getfrombank",            &getfrombank,            false,     false,      true },
+ // { "banking",         	"getfromreserve",         &getromreserve,          false,     false,      true },
 #endif
+	/* Secure Messaging */
+    { "Secure Msg",         "smsgenable",             &smsgenable,             false,     false, 	  false},
+    { "Secure Msg",         "smsgdisable",            &smsgdisable,            false,     false,	  false},
+    { "Secure Msg",         "smsglocalkeys",          &smsglocalkeys,          false,     false,	  false},
+    { "Secure Msg",         "smsgoptions",            &smsgoptions,            false,     false,	  false},
+    { "Secure Msg",         "smsgscanchain",          &smsgscanchain,          false,     false,	  false},
+    { "Secure Msg",         "smsgscanbuckets",        &smsgscanbuckets,        false,     false,	  false},
+    { "Secure Msg",         "smsgaddkey",             &smsgaddkey,             false,     false,	  false},
+    { "Secure Msg",         "smsggetpubkey",          &smsggetpubkey,          false,     false,	  false},
+    { "Secure Msg",         "smsgsend",               &smsgsend,               false,     false,	  false},
+    { "Secure Msg",         "smsgsendanon",           &smsgsendanon,           false,     false,	  false},
+    { "Secure Msg",         "smsginbox",              &smsginbox,              false,     false,	  false},
+    { "Secure Msg",         "smsgoutbox",             &smsgoutbox,             false,     false,	  false},
+    { "Secure Msg",         "smsgbuckets",            &smsgbuckets,            false,     false,	  false},
+
 };
 
 CRPCTable::CRPCTable()

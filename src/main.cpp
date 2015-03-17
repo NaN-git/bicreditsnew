@@ -18,6 +18,7 @@
 #include "merkleblock.h"
 #include "net.h"
 #include "pow.h"
+#include "smessage.h"
 #include "txdb.h"
 #include "txmempool.h"
 #include "ui_interface.h"
@@ -4447,6 +4448,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     return error("invalid header received");
                 }
             }
+            if (fSecMsgEnabled)
+               SecureMsgScanBlock(block);
+
         }
 
         if (pindexLast)
@@ -4482,7 +4486,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                 Misbehaving(pfrom->GetId(), nDoS);
             }
         }
-
+		if (fSecMsgEnabled)
+            SecureMsgScanBlock(block);
     }
 
 
@@ -4704,6 +4709,8 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
 
     else
     {
+        if (fSecMsgEnabled)
+            SecureMsgReceiveData(pfrom, strCommand, vRecv);		
         ProcessMessageDarksend(pfrom, strCommand, vRecv);
         ProcessMessageMasternode(pfrom, strCommand, vRecv);
         ProcessMessageInstantX(pfrom, strCommand, vRecv);
@@ -5073,7 +5080,8 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
         }
         if (!vGetData.empty())
             pto->PushMessage("getdata", vGetData);
-
+        if (fSecMsgEnabled)
+            SecureMsgSendData(pto, fSendTrickle); // should be in cs_main?
     }
     return true;
 }

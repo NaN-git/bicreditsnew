@@ -104,6 +104,7 @@ BITCREDIT_CORE_H = \
   keystore.h \
   leveldbwrapper.h \
   limitedmap.h \
+  lz4/lz4.h \
   main.h \
   masternode.h \
   masternodeconfig.h \
@@ -150,7 +151,8 @@ BITCREDIT_CORE_H = \
   walletdb.h \
   irc.h \
   strlcpy.h \
-  compat/sanity.h
+  compat/sanity.h \
+  xxhash/xxhash.h 
 
 JSON_H = \
   json/json_spirit.h \
@@ -180,6 +182,7 @@ libbitcredit_server_a_SOURCES = \
   checkpoints.cpp \
   init.cpp \
   leveldbwrapper.cpp \
+  lz4/lz4.cpp \
   main.cpp \
   merkleblock.cpp \
   miner.cpp \
@@ -199,6 +202,7 @@ libbitcredit_server_a_SOURCES = \
   timedata.cpp \
   txdb.cpp \
   txmempool.cpp \
+  xxhash/xxhash.c \
   $(JSON_H) \
   $(BITCREDIT_CORE_H)
 

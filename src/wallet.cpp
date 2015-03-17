@@ -248,6 +248,7 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase, bool anonymizeOnly
                 return true;
             }
         }
+        SecureMsgWalletUnlocked();
     }
     return false;
 }

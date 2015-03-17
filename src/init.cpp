@@ -30,6 +30,7 @@
 #include "wallet.h"
 #include "walletdb.h"
 #include "keepass.h"
+#include "smessage.h"
 #endif
 
 #include <stdint.h>
@@ -131,6 +132,7 @@ void Shutdown()
     /// module was initialized.
     RenameThread("bitcredit-shutoff");
     mempool.AddTransactionsUpdated(1);
+    SecureMsgShutdown();
     StopRPCThreads();
 #ifdef ENABLE_WALLET
     if (pwalletMain)
@@ -389,6 +391,12 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += "  -rpcsslcertificatechainfile=<file.cert>  " + strprintf(_("Server certificate file (default: %s)"), "server.cert") + "\n";
     strUsage += "  -rpcsslprivatekeyfile=<file.pem>         " + strprintf(_("Server private key (default: %s)"), "server.pem") + "\n";
     strUsage += "  -rpcsslciphers=<ciphers>                 " + strprintf(_("Acceptable ciphers (default: %s)"), "TLSv1.2+HIGH:TLSv1+HIGH:!SSLv2:!aNULL:!eNULL:!3DES:@STRENGTH") + "\n";
+
+    strUsage += "\n" + _("Secure messaging options:") + "\n";
+    strUsage += "  -nosmsg                                  " + _("Disable secure messaging.") + "\n";
+    strUsage += "  -debugsmsg                               " + _("Log extra debug messages.") + "\n";
+    strUsage += "  -smsgscanchain                           " + _("Scan the block chain for public key addresses on startup.") + "\n";
+
 
     return strUsage;
 }
@@ -669,6 +677,16 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (GetBoolArg("-nodebug", false) || find(categories.begin(), categories.end(), string("0")) != categories.end())
         fDebug = false;
 
+    if (fDebug)
+    {
+        SoftSetBoolArg("-debugsmsg", true);
+
+    };
+
+    fDebugSmsg = GetBoolArg("-debugsmsg");
+    
+    fNoSmsg = GetBoolArg("-nosmsg");    
+
     // Check for -debugnet
     if (GetBoolArg("-debugnet", false))
         InitWarning(_("Warning: Unsupported argument -debugnet ignored, use -debug=net."));
@@ -836,7 +854,10 @@ bool AppInit2(boost::thread_group& threadGroup)
     }
 
     //ignore masternodes below protocol version
-    nMasternodeMinProtocol = GetArg("-masternodeminprotocol", 70051);
+    MIN_MN_PROTO_VERSION = GetArg("-masternodeminprotocol", 70007);
+
+    if (fNoSmsg)
+        nLocalServices &= ~(SMSG_RELAY);
 
     int64_t nStart;
 
@@ -1383,6 +1404,7 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     threadGroup.create_thread(boost::bind(&ThreadCheckDarkSendPool));
 
+    SecureMsgStart(fNoSmsg, GetBoolArg("-smsgscanchain"));
 
     if (!CheckDiskSpace())
         return false;

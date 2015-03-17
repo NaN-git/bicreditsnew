@@ -74,6 +74,7 @@ enum {
     // collisions and other cases where nodes may be advertising a service they
     // do not actually support. Other service bits should be allocated via the
     // BIP process.
+    SMSG_RELAY          = (1 << 1),
 };
 
 /** A CService with information about it as peer */

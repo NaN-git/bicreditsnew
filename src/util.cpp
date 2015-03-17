@@ -104,7 +104,6 @@ int nAnonymizeBitcreditAmount = 10000;
 int nLiquidityProvider = 0;
 /** Spork enforcement enabled time */
 int64_t enforceMasternodePaymentsTime = 4085657524;
-int nMasternodeMinProtocol = 0;
 bool fSucessfullyLoaded = false;
 bool fEnableDarksend = false;
 /** All denominations used by darksend */
@@ -113,8 +112,10 @@ std::vector<int64_t> darkSendDenominations;
 map<string, string> mapArgs;
 map<string, vector<string> > mapMultiArgs;
 bool fDebug = false;
+bool fDebugSmsg = false;
 bool fPrintToConsole = false;
 bool fPrintToDebugLog = true;
+bool fNoSmsg = false;
 bool fDaemon = false;
 bool fServer = false;
 string strMiscWarning;
