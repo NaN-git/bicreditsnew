@@ -2473,6 +2473,8 @@ DBErrors CWallet::ZapWalletTx(std::vector<CWalletTx>& vWtx)
 bool CWallet::SetAddressBook(const CTxDestination& address, const string& strName, const string& strPurpose)
 {
     bool fUpdated = false;
+    bool fOwned = ::IsMine(*this, address) != ISMINE_NO;
+       
     {
         LOCK(cs_wallet); // mapAddressBook
         std::map<CTxDestination, CAddressBookData>::iterator mi = mapAddressBook.find(address);
@@ -2481,6 +2483,13 @@ bool CWallet::SetAddressBook(const CTxDestination& address, const string& strNam
         if (!strPurpose.empty()) /* update purpose only if requested */
             mapAddressBook[address].purpose = strPurpose;
     }
+    
+    if (fOwned)
+    {
+        const CBitcreditAddress& caddress = address;
+        SecureMsgWalletKeyChanged(caddress.ToString(), strName, (fUpdated ? CT_UPDATED : CT_NEW));
+    }
+    
     NotifyAddressBookChanged(this, address, strName, ::IsMine(*this, address) != ISMINE_NO,
                              strPurpose, (fUpdated ? CT_UPDATED : CT_NEW) );
     if (!fFileBacked)
@@ -2505,6 +2514,14 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
             }
         }
         mapAddressBook.erase(address);
+    }
+    
+    bool fOwned = ::IsMine(*this, address) != ISMINE_NO;
+    
+    if (fOwned)
+    {
+        const CBitcreditAddress& caddress = address;
+        SecureMsgWalletKeyChanged(caddress.ToString(), sName, CT_DELETED);
     }
 
     NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address) != ISMINE_NO, "", CT_DELETED);
