@@ -622,10 +622,6 @@ struct CBlockTemplate
 };
 
 
-
-
-
-
 class CValidationInterface {
 protected:
     virtual void SyncTransaction(const CTransaction &tx, const CBlock *pblock) {};
@@ -639,5 +635,6 @@ protected:
     friend void ::UnregisterValidationInterface(CValidationInterface*);
     friend void ::UnregisterAllValidationInterfaces();
 };
+
 
 #endif // BITCREDIT_MAIN_H

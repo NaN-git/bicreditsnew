@@ -1,6 +1,6 @@
 DIST_SUBDIRS = secp256k1
 AM_LDFLAGS = $(PTHREAD_CFLAGS) $(LIBTOOL_LDFLAGS)
-
+RELDFLAGS += "-lboost_date_time"
 
 if EMBEDDED_LEVELDB
 LEVELDB_CPPFLAGS += -I$(srcdir)/leveldb/include
@@ -119,6 +119,7 @@ BITCREDIT_CORE_H = \
   pubkey.h \
   random.h \
   rpcclient.h \
+  rpcsmessage.h \
   rpcprotocol.h \
   rpcserver.h \
   script/interpreter.h \
@@ -128,6 +129,7 @@ BITCREDIT_CORE_H = \
   script/standard.h \
   script/script_error.h \
   serialize.h \
+  smessage.h \
   streams.h \
   spork.h \
   sync.h \
@@ -182,7 +184,7 @@ libbitcredit_server_a_SOURCES = \
   checkpoints.cpp \
   init.cpp \
   leveldbwrapper.cpp \
-  lz4/lz4.cpp \
+  lz4/lz4.c \
   main.cpp \
   merkleblock.cpp \
   miner.cpp \
@@ -193,12 +195,14 @@ libbitcredit_server_a_SOURCES = \
   rest.cpp \
   rpcblockchain.cpp \
   rpcdarksend.cpp \
+  rpcsmessage.cpp \
   rpcmining.cpp \
   rpcmisc.cpp \
   rpcnet.cpp \
   rpcrawtransaction.cpp \
   rpcserver.cpp \
   script/sigcache.cpp \
+  smessage.cpp \
   timedata.cpp \
   txdb.cpp \
   txmempool.cpp \

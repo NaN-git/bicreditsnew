@@ -683,9 +683,9 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     };
 
-    fDebugSmsg = GetBoolArg("-debugsmsg");
+    fDebugSmsg = GetBoolArg("-debugsmsg", false);
     
-    fNoSmsg = GetBoolArg("-nosmsg");    
+    fNoSmsg = GetBoolArg("-nosmsg", false); 
 
     // Check for -debugnet
     if (GetBoolArg("-debugnet", false))
@@ -854,7 +854,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     }
 
     //ignore masternodes below protocol version
-    MIN_MN_PROTO_VERSION = GetArg("-masternodeminprotocol", 70007);
+    CMasterNode::minProtoVersion = GetArg("-masternodeminprotocol", MIN_MN_PROTO_VERSION);
 
     if (fNoSmsg)
         nLocalServices &= ~(SMSG_RELAY);
@@ -1404,7 +1404,7 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     threadGroup.create_thread(boost::bind(&ThreadCheckDarkSendPool));
 
-    SecureMsgStart(fNoSmsg, GetBoolArg("-smsgscanchain"));
+    SecureMsgStart(fNoSmsg, GetBoolArg("-smsgscanchain", false));
 
     if (!CheckDiskSpace())
         return false;

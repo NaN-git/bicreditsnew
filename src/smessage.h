@@ -7,13 +7,37 @@
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
 
+#include "base58.h"
 #include "net.h"
 #include "db.h"
+#include "pubkey.h"
 #include "streams.h"
 #include "ui_interface.h"
 #include "wallet.h"
 #include "lz4/lz4.h"
 
+
+/* Format characters for (s)size_t and ptrdiff_t */
+#if defined(_MSC_VER) || defined(__MSVCRT__)
+/* (s)size_t and ptrdiff_t have the same size specifier in MSVC:
+http://msdn.microsoft.com/en-us/library/tcxf1dw6%28v=vs.100%29.aspx
+*/
+#    define PRIszx "Ix"
+#    define PRIszu "Iu"
+#    define PRIszd "Id"
+#    define PRIpdx "Ix"
+#    define PRIpdu "Iu"
+#    define PRIpdd "Id"
+#else /* C99 standard */
+#    define PRIszx "zx"
+#    define PRIszu "zu"
+#    define PRIszd "zd"
+#    define PRIpdx "tx"
+#    define PRIpdu "tu"
+#    define PRIpdd "td"
+#endif
+
+typedef std::vector<unsigned char, secure_allocator<unsigned char> > secure_buffer;
 
 const unsigned int SMSG_HDR_LEN         = 104;               // length of unencrypted header, 4 + 2 + 1 + 8 + 16 + 33 + 32 + 4 +4
 const unsigned int SMSG_PL_HDR_LEN      = 1+20+65+4;         // length of encrypted header in payload
@@ -100,10 +124,10 @@ class MessageData
 {
 // -- Decrypted SecureMessage data
 public:
-    int64_t                     timestamp;
-    std::string                 sToAddress;
-    std::string                 sFromAddress;
-    std::vector<unsigned char>  vchMessage;         // null terminated plaintext
+    int64_t        timestamp;
+    std::string    sToAddress;
+    std::string    sFromAddress;
+    secure_buffer  vchMessage;         // null terminated plaintext
 };
 
 
@@ -167,9 +191,10 @@ public:
 class CBitcreditAddress_B : public CBitcreditAddress
 {
 public:
-    unsigned char getVersion()
+    unsigned char getVersion() const
     {
-        return nVersion;
+		assert(vchVersion.size() == sizeof(unsigned char));
+        return vchVersion[0];
     }
 };
 
@@ -198,7 +223,7 @@ public:
     bool            fReceiveEnabled;
     bool            fReceiveAnon;
 
-     ADD_SERIALIZE_METHODS;
+    ADD_SERIALIZE_METHODS;
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
@@ -252,10 +277,10 @@ public:
         LockedPageManager::Instance().UnlockRange(&chIV[0], sizeof chIV);
     }
 
-    bool SetKey(const std::vector<unsigned char>& vchNewKey, unsigned char* chNewIV);
+    bool SetKey(const secure_buffer& vchNewKey, unsigned char* chNewIV);
     bool SetKey(const unsigned char* chNewKey, unsigned char* chNewIV);
     bool Encrypt(unsigned char* chPlaintext, uint32_t nPlain, std::vector<unsigned char> &vchCiphertext);
-    bool Decrypt(unsigned char* chCiphertext, uint32_t nCipher, std::vector<unsigned char>& vchPlaintext);
+    bool Decrypt(unsigned char* chCiphertext, uint32_t nCipher, secure_buffer &vchPlaintext);
 };
 
 

@@ -4448,9 +4448,6 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
                     return error("invalid header received");
                 }
             }
-            if (fSecMsgEnabled)
-               SecureMsgScanBlock(block);
-
         }
 
         if (pindexLast)

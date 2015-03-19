@@ -74,7 +74,9 @@ class Stats : public QObject
 			
 		if (chainActive.Tip()->nHeight<80000)
 			return 4.0;
-			
+
+		//TODO: case for 80000 >= nHeight <= 100000
+		
 		if (chainActive.Tip()->nHeight>100000)
 			return 10.0;				
 	}

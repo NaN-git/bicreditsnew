@@ -6,6 +6,10 @@
 #include "addrman.h"
 #include <boost/lexical_cast.hpp>
 
+
+int CMasterNode::minProtoVersion = MIN_MN_PROTO_VERSION;
+
+
 /** The list of active masternodes */
 std::vector<CMasterNode> vecMasternodes;
 /** Object for who's going to get paid on which blocks */

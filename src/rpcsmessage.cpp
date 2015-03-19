@@ -6,6 +6,7 @@
 #include "rpcserver.h"
 
 #include <boost/lexical_cast.hpp>
+#include <boost/filesystem.hpp>
 
 #include "smessage.h"
 #include "init.h"
@@ -17,6 +18,12 @@ using namespace std;
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spirit::Object& entry);
 
 
+char* getTimeString(int64_t time, char *cbuf, size_t size)
+{
+    std::string str = boost::posix_time::to_simple_string(boost::posix_time::from_time_t(time));
+    memcpy(cbuf, str.data(), std::min(size, str.size()));
+    return cbuf;
+}
 
 Value smsgenable(const Array& params, bool fHelp)
 {
@@ -91,17 +98,14 @@ Value smsgoptions(const Array& params, bool fHelp)
         };
         
         std::string optname = params[1].get_str();
-        std::string value   = params[2].get_str();
+        bool is_bool = params[2].type() == bool_type;
+		bool value = is_bool && params[2].get_bool();
         
         if (optname == "newAddressRecv")
         {
-            if (IsStringBoolPositive(value))
+            if (is_bool)
             {
-                smsgOptions.fNewAddressRecv = true;
-            } else
-            if (IsStringBoolNegative(value))
-            {
-                smsgOptions.fNewAddressRecv = false;
+                smsgOptions.fNewAddressRecv = value;
             } else
             {
                 result.push_back(Pair("result", "Unknown value."));
@@ -111,13 +115,9 @@ Value smsgoptions(const Array& params, bool fHelp)
         } else
         if (optname == "newAddressAnon")
         {
-            if (IsStringBoolPositive(value))
+            if (is_bool)
             {
-                smsgOptions.fNewAddressAnon = true;
-            } else
-            if (IsStringBoolNegative(value))
-            {
-                smsgOptions.fNewAddressAnon = false;
+                smsgOptions.fNewAddressAnon = value;
             } else
             {
                 result.push_back(Pair("result", "Unknown value."));
@@ -188,9 +188,9 @@ Value smsglocalkeys(const Array& params, bool fHelp)
             };
             
             
-            sPublicKey = EncodeBase58(pubKey.Raw());
+            sPublicKey = EncodeBase58(&pubKey[0], &pubKey[pubKey.size()]);
             
-            std::string sLabel = pwalletMain->mapAddressBook[keyID];
+            std::string sLabel = pwalletMain->mapAddressBook[keyID].name;
             std::string sInfo;
             if (all)
                 sInfo = std::string("Receive ") + (it->fReceiveEnabled ? "on,  " : "off, ");
@@ -302,7 +302,7 @@ Value smsglocalkeys(const Array& params, bool fHelp)
     if (mode == "wallet")
     {
         uint32_t nKeys = 0;
-        BOOST_FOREACH(const PAIRTYPE(CTxDestination, std::string)& entry, pwalletMain->mapAddressBook)
+        BOOST_FOREACH(const PAIRTYPE(CTxDestination, CAddressBookData)& entry, pwalletMain->mapAddressBook)
         {
             if (!IsMine(*pwalletMain, entry.first))
                 continue;
@@ -328,9 +328,9 @@ Value smsglocalkeys(const Array& params, bool fHelp)
                 continue;
             };
             
-            sPublicKey = EncodeBase58(pubKey.Raw());
+            sPublicKey = EncodeBase58(&pubKey[0], &pubKey[pubKey.size()]);
             
-            result.push_back(Pair("key", address + " - " + sPublicKey + " - " + entry.second));
+            result.push_back(Pair("key", address + " - " + sPublicKey + " - " + entry.second.name));
             nKeys++;
         };
         
@@ -487,7 +487,7 @@ Value smsggetpubkey(const Array& params, bool fHelp)
             } else
             {
                 //cpkFromDB.SetCompressedPubKey(); // make sure key is compressed
-                publicKey = EncodeBase58(cpkFromDB.Raw());
+                publicKey = EncodeBase58(&cpkFromDB[0], &cpkFromDB[cpkFromDB.size()]);
                 
                 result.push_back(Pair("result", "Success."));
                 result.push_back(Pair("peer address in DB", address));
@@ -838,7 +838,9 @@ Value smsgbuckets(const Array& params, bool fHelp)
                         uint64_t nFBytes = 0;
                         nFBytes = boost::filesystem::file_size(fullPath);
                         nBytes += nFBytes;
-                        objM.push_back(Pair("file size", bytesReadable(nFBytes)));
+                        ostringstream bytesReadable;
+                        bytesReadable << nFBytes;
+                        objM.push_back(Pair("file size", bytesReadable.str()));
                     } catch (const boost::filesystem::filesystem_error& ex)
                     {
                         objM.push_back(Pair("file size, error", ex.what()));
@@ -856,7 +858,9 @@ Value smsgbuckets(const Array& params, bool fHelp)
         Object objM;
         objM.push_back(Pair("buckets", snBuckets));
         objM.push_back(Pair("messages", snMessages));
-        objM.push_back(Pair("size", bytesReadable(nBytes)));
+        ostringstream bytesReadable;
+        bytesReadable << nBytes;
+        objM.push_back(Pair("size", bytesReadable.str()));
         result.push_back(Pair("total", objM));
         
     } else

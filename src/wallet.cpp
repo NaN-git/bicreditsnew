@@ -2521,7 +2521,7 @@ bool CWallet::DelAddressBook(const CTxDestination& address)
     if (fOwned)
     {
         const CBitcreditAddress& caddress = address;
-        SecureMsgWalletKeyChanged(caddress.ToString(), sName, CT_DELETED);
+        SecureMsgWalletKeyChanged(caddress.ToString(), "", CT_DELETED); //TODO: change second argument, when it is in use
     }
 
     NotifyAddressBookChanged(this, address, "", ::IsMine(*this, address) != ISMINE_NO, "", CT_DELETED);
