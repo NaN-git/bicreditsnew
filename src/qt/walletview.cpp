@@ -3,13 +3,14 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "walletview.h"
-
+#include "exchangebrowser.h"
+#include "chatwindow.h"
 #include "addressbookpage.h"
 #include "askpassphrasedialog.h"
 #include "bitcreditgui.h"
+#include "votecoinsdialog.h"
 #include "clientmodel.h"
 #include "blockbrowser.h"
-#include "poolbrowser.h"
 #include "bankstatisticspage.h"
 #include "guiutil.h"
 #include "optionsmodel.h"
@@ -40,9 +41,10 @@ WalletView::WalletView(QWidget *parent):
 {
     // Create tabs
     overviewPage = new OverviewPage();
+	chatWindow = new ChatWindow(this);
+	exchangeBrowser = new ExchangeBrowser(this);
 	blockBrowser = new BlockBrowser(this);
 	bankstatisticsPage = new BankStatisticsPage(this);
-	poolBrowser = new PoolBrowser(this);
 	
     transactionsPage = new QWidget(this);
     QVBoxLayout *vbox = new QVBoxLayout();
@@ -62,6 +64,7 @@ WalletView::WalletView(QWidget *parent):
     receiveCoinsPage = new ReceiveCoinsDialog();
     sendCoinsPage = new SendCoinsDialog();
     bankCoinsPage = new BankCoinsDialog();
+	voteCoinsPage = new VoteCoinsDialog();
 
     addWidget(overviewPage);
     addWidget(transactionsPage);
@@ -69,9 +72,10 @@ WalletView::WalletView(QWidget *parent):
     addWidget(sendCoinsPage);
     addWidget(blockBrowser);
     addWidget(bankstatisticsPage);
-    addWidget(poolBrowser);
     addWidget(bankCoinsPage);
-    
+    addWidget(voteCoinsPage);
+	addWidget(chatWindow);
+	addWidget(exchangeBrowser);    
     
 
     // Clicking on a transaction on the overview pre-selects the transaction on the transaction history page
@@ -129,6 +133,8 @@ void WalletView::setWalletModel(WalletModel *walletModel)
     overviewPage->setWalletModel(walletModel);
     receiveCoinsPage->setModel(walletModel);
     sendCoinsPage->setModel(walletModel);
+	voteCoinsPage->setModel(walletModel);
+	bankCoinsPage->setModel(walletModel);
 
     if (walletModel)
     {
@@ -180,9 +186,14 @@ void WalletView::gotoBlockBrowser()
     setCurrentWidget(blockBrowser);
 }
 
-void WalletView::gotoPoolBrowser()
+void WalletView::gotoExchangeBrowserPage()
 {
-    setCurrentWidget(poolBrowser);
+    setCurrentWidget(exchangeBrowser);
+}
+
+void WalletView::gotoChatPage()
+{
+    setCurrentWidget(chatWindow);
 }
 
 void WalletView::gotoBankStatisticsPage()
@@ -207,6 +218,15 @@ void WalletView::gotoSendCoinsPage(QString addr)
     if (!addr.isEmpty())
         sendCoinsPage->setAddress(addr);
 }
+
+void WalletView::gotoVoteCoinsPage(QString addr)
+{
+    setCurrentWidget(voteCoinsPage);
+    
+    if (!addr.isEmpty())
+        voteCoinsPage->setAddress(addr);
+}
+
 
 void WalletView::gotoBankCoinsPage(QString addr)
 {

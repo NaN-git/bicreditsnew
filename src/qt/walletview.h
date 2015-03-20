@@ -12,6 +12,7 @@
 class BitcreditGUI;
 class ClientModel;
 
+class VoteCoinsDialog;
 class OverviewPage;
 class ReceiveCoinsDialog;
 class SendCoinsDialog;
@@ -19,8 +20,9 @@ class BankCoinsDialog;
 class SendCoinsRecipient;
 class TransactionView;
 class WalletModel;
+class ExchangeBrowser;
+class ChatWindow;
 class BlockBrowser;
-class PoolBrowser;
 class BankStatisticsPage;
 
 QT_BEGIN_NAMESPACE
@@ -62,6 +64,8 @@ private:
     ClientModel *clientModel;
     
     WalletModel *walletModel;
+	ChatWindow *chatWindow;
+	ExchangeBrowser *exchangeBrowser;
 
     OverviewPage *overviewPage;
     QWidget *transactionsPage;
@@ -69,9 +73,9 @@ private:
     SendCoinsDialog *sendCoinsPage;
     BankCoinsDialog *bankCoinsPage;
 	BlockBrowser *blockBrowser;
-	PoolBrowser *poolBrowser;
 	BankStatisticsPage *bankstatisticsPage;
     TransactionView *transactionView;
+    VoteCoinsDialog *voteCoinsPage;
 
     QProgressDialog *progressDialog;
 
@@ -80,14 +84,20 @@ public slots:
     void gotoOverviewPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
+    /** Switch to chat page */
+    void gotoChatPage();
+    /** Switch to exchange browser page */
+    void gotoExchangeBrowserPage();	
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
     void gotoBankCoinsPage(QString addr = "");
 	void gotoBlockBrowser();
-	void gotoPoolBrowser();
 	void gotoBankStatisticsPage();
+    /** Switch to send coins page */
+    void gotoVoteCoinsPage(QString addr = "");
+
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
     /** Show Sign/Verify Message dialog and switch to verify message tab */

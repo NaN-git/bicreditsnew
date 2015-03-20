@@ -20,6 +20,7 @@
 #include "wallet.h"
 #endif
 #include "masternode.h"
+#include "voting.h"
 #include <boost/thread.hpp>
 #include <boost/tuple/tuple.hpp>
 
@@ -129,6 +130,40 @@ CBlockTemplate* CreateNewBlock(const CScript& scriptPubKeyIn)
 	{
 	txNew.vout.resize(3);	
 	}
+	if (chainActive.Tip()->nHeight>70000)
+	{
+	LOCK( grantdb );
+		//For grant award block, add grants to coinbase
+		//NOTE: We're creating the next block (powerful pools)
+		printf("Entering grant Award\n");
+	if( isGrantAwardBlock( chainActive.Tip()->nHeight + 1 ) )
+		{
+			if( !getGrantAwards( chainActive.Tip()->nHeight + 1 ) ){
+				throw std::runtime_error( "ConnectBlock() : Connect Block grant awards error.\n" );
+			}
+				
+			printf(" === Bitcredit Client ===\n === Retrieved Grant Rewards, Add to Block %d === \n", chainActive.Tip()->nHeight+1);
+			txNew.vout.resize( 3 + grantAwards.size() );
+
+			int i = 2;
+					
+			for( gait = grantAwards.begin();
+				gait != grantAwards.end();
+				++gait)
+			{
+				printf(" === Grant %llu MMC to %s === \n",gait->second,gait->first.c_str());
+				
+				CBitcreditAddress address( gait->first );
+				txNew.vout[ i + 1 ].scriptPubKey= GetScriptForDestination(address.Get());
+				txNew.vout[ i + 1 ].nValue = gait->second;
+				i++;		
+			}
+		}
+    }	
+	
+	
+	
+	
     if (chainActive.Tip()->nHeight<30000)
 	{
     txNew.vout[0].scriptPubKey = scriptPubKeyIn;

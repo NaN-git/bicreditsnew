@@ -53,6 +53,8 @@
         <file alias="print">res/icons/print.png</file>
         <file alias="bankstats">res/icons/bankstats.png</file>
         <file alias="exchange">res/icons/exchange.png</file>
+        <file alias="vote">res/icons/vote.png</file>
+        <file alias="chat">res/icons/chat.png</file>
     </qresource>
     <qresource prefix="/images">
         <file alias="about">res/images/about.png</file>

@@ -20,9 +20,12 @@
 
 class ClientModel;
 class NetworkStyle;
+class VoteCoinsDialog;
 class Notificator;
 class OptionsModel;
 class RPCConsole;
+class ExchangeBrowser;
+class ChatWindow;
 class SendCoinsRecipient;
 class UnitDisplayStatusBarControl;
 class WalletFrame;
@@ -89,6 +92,8 @@ private:
     QProgressDialog *progressDialog;
 
     QMenuBar *appMenuBar;
+	QAction *chatAction;
+	QAction *exchangeAction;
     QAction *overviewAction;
     QAction *historyAction;
     QAction *quitAction;
@@ -110,10 +115,9 @@ private:
     QAction *openAction;
     QAction *showHelpMessageAction;
 	QAction *blockAction;
-	QAction *poolAction;
 	QAction *bankstatsAction;
 	QAction *paperWalletAction;
-	
+	QAction * voteCoinsAction;
 
     QSystemTrayIcon *trayIcon;
     QMenu *trayIconMenu;
@@ -181,16 +185,21 @@ private slots:
     void gotoOverviewPage();
     /** Switch to history (transactions) page */
     void gotoHistoryPage();
+	/** Switch to chat page */
+    void gotoChatPage();
+	/** Switch to exchange browser page */
+    void gotoExchangeBrowserPage();
     /** Switch to receive coins page */
     void gotoReceiveCoinsPage();
     /** Switch to send coins page */
     void gotoSendCoinsPage(QString addr = "");
 	/** Switch to blockexplorer */
     void gotoBlockBrowser();
-    void gotoPoolBrowser();
     void gotoBankStatisticsPage();
 	void gotoBankCoinsPage(QString addr = "");
 
+    /** Switch to vote coins page */
+    void gotoVoteCoinsPage(QString addr = "");
     /** Show Sign/Verify Message dialog and switch to sign message tab */
     void gotoSignMessageTab(QString addr = "");
     /** Show Sign/Verify Message dialog and switch to verify message tab */

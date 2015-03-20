@@ -109,6 +109,7 @@ BITCREDIT_CORE_H = \
   masternodeconfig.h \
   merkleblock.h \
   miner.h \
+  momentum.h \
   mruset.h \
   netbase.h \
   net.h \
@@ -126,6 +127,7 @@ BITCREDIT_CORE_H = \
   script/sign.h \
   script/standard.h \
   script/script_error.h \
+  semiOrderedMap.h \
   serialize.h \
   streams.h \
   spork.h \
@@ -143,9 +145,8 @@ BITCREDIT_CORE_H = \
   utilmoneystr.h \
   utiltime.h \
   version.h \
+  voting.h \
   wallet.h \
-  momentum.h \
-  semiOrderedMap.h \
   wallet_ismine.h \
   walletdb.h \
   irc.h \
@@ -274,6 +275,7 @@ libbitcredit_common_a_SOURCES = \
   script/sign.cpp \
   script/standard.cpp \
   script/script_error.cpp \
+  voting.cpp \
   $(BITCREDIT_CORE_H)
 
 # util: shared between all executables.

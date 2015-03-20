@@ -465,7 +465,7 @@ void BankOverview::clear()
     updateRemoveEnabled();
 
     ui->sendButton->setDefault(true);
-=======
+
     // prepare transaction for getting txFee earlier
     WalletModelTransaction currentTransaction(recipients);
     WalletModel::SendCoinsReturn prepareStatus;
@@ -527,7 +527,7 @@ void BankOverview::clear()
         accept();
 
     fNewRecipientAllowed = true;
->>>>>>> origin/master2
+
 }
 
 void BankOverview::reject()
