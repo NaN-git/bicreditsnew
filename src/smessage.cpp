@@ -36,13 +36,11 @@ Notes:
 #include <sstream>
 #include <errno.h>
 
-#include <openssl/crypto.h>
-#include <openssl/ec.h>
-#include <openssl/ecdh.h>
-#include <openssl/sha.h>
+#include <secp256k1.h>
 #include <openssl/aes.h>
 #include <openssl/evp.h>
-#include <openssl/hmac.h>
+#include "crypto/sha512.h"
+#include "crypto/hmac_sha256.h"
 
 #include <boost/thread.hpp>
 #include <boost/filesystem.hpp>
@@ -54,7 +52,6 @@ Notes:
 #include "db.h"
 #include "init.h" // pwalletMain
 #include "txdb-leveldb.h"
-
 
 #include "lz4/lz4.c"
 
@@ -73,12 +70,35 @@ Notes:
 #endif // IS_ARCH_64
 
 
-inline std::string ValueString(const std::vector<unsigned char>& vch)
+static inline std::string ValueString(const std::vector<unsigned char>& vch)
 {
     if (vch.size() <= 4)
         return strprintf("%d", CScriptNum(vch, false).getint());
     else
         return HexStr(vch);
+}
+
+
+//! anonymous namespace
+namespace {
+
+class CSecp256k1Init {
+public:
+    CSecp256k1Init() {
+        secp256k1_start(SECP256K1_START_VERIFY);
+    }
+    ~CSecp256k1Init() {
+        secp256k1_stop();
+    }
+};
+static CSecp256k1Init instance_of_csecp256k1;
+}
+
+static bool DeriveKey(secure_buffer &vchP, const CKey &keyR, const CPubKey &cpkDestK)
+{
+    vchP.assign(cpkDestK.begin(), cpkDestK.end());
+    secure_buffer r(keyR.begin(), keyR.end());
+    return secp256k1_ec_pubkey_tweak_mul(&vchP[0], vchP.size(), &r[0]);
 }
 
 
@@ -89,14 +109,14 @@ boost::signals2::signal<void (SecMsgStored& outboxHdr)> NotifySecMsgOutboxChange
 boost::signals2::signal<void ()> NotifySecMsgWalletUnlocked;
 
 bool fSecMsgEnabled = false;
+boost::thread secureMsgThread;
+boost::thread secureMsgPowThread;
 
 std::map<int64_t, SecMsgBucket> smsgBuckets;
 std::vector<SecMsgAddress>      smsgAddresses;
 SecMsgOptions                   smsgOptions;
 
 uint32_t nPeerIdCounter = 1;
-
-
 
 CCriticalSection cs_smsg;
 CCriticalSection cs_smsgDB;
@@ -694,7 +714,11 @@ void ThreadSecureMsg(void* parg)
             };
         }; // LOCK(cs_smsg);
 
-        sleep(SMSG_THREAD_DELAY); //  // check every SMSG_THREAD_DELAY seconds
+        try {
+            boost::this_thread::sleep_for(boost::chrono::seconds(SMSG_THREAD_DELAY)); // check every SMSG_THREAD_DELAY seconds
+        } catch(boost::thread_interrupted &e) {
+            break;
+        }
     };
 
     printf("ThreadSecureMsg exited.\n");
@@ -788,8 +812,11 @@ void ThreadSecureMsgPow(void* parg)
             delete it;
         }
 
-        // -- shutdown thread waits 5 seconds, this should be less
-        sleep(2); // seconds
+        try {
+            boost::this_thread::sleep_for(boost::chrono::seconds(2));
+        } catch(boost::thread_interrupted &e) {
+            break;
+        }
     };
 
     printf("ThreadSecureMsgPow exited.\n");
@@ -1136,66 +1163,16 @@ bool SecureMsgStart(bool fDontStart, bool fScanChain)
     };
 
     printf("Secure messaging starting.\n");
-
-    fSecMsgEnabled = true;
-
-    if (SecureMsgReadIni() != 0)
-        printf("Failed to read smsg.ini\n");
-
-    if (smsgAddresses.size() < 1)
-    {
-        printf("No address keys loaded.\n");
-        if (SecureMsgAddWalletAddresses() != 0)
-            printf("Failed to load addresses from wallet.\n");
-    };
+    SecureMsgEnable();
 
     if (fScanChain)
     {
         SecureMsgScanBlockChain();
     };
-
-    if (SecureMsgBuildBucketSet() != 0)
-    {
-        printf("SecureMsg could not load bucket sets, secure messaging disabled.\n");
-        fSecMsgEnabled = false;
-        return false;
-    };
-
-    // -- start threads
-    if (boost::thread(&ThreadSecureMsg, (void*) NULL).get_id() == boost::this_thread::get_id()
-        || boost::thread(&ThreadSecureMsgPow, (void*) NULL).get_id() == boost::this_thread::get_id())
-    {
-        printf("SecureMsg could not start threads, secure messaging disabled.\n");
-        fSecMsgEnabled = false;
-        return false;
-    };
-
+    
     return true;
 };
 
-/** called from Shutdown() in init.cpp */
-bool SecureMsgShutdown()
-{
-    if (!fSecMsgEnabled)
-        return false;
-
-    printf("Stopping secure messaging.\n");
-
-
-    if (SecureMsgWriteIni() != 0)
-        printf("Failed to save smsg.ini\n");
-
-    fSecMsgEnabled = false;
-
-    if (smsgDB)
-    {
-        LOCK(cs_smsgDB);
-        delete smsgDB;
-        smsgDB = NULL;
-    };
-
-    return true;
-};
 
 bool SecureMsgEnable()
 {
@@ -1233,8 +1210,10 @@ bool SecureMsgEnable()
     }; // LOCK(cs_smsg);
 
     // -- start threads
-    if (boost::thread(&ThreadSecureMsg, (void*) NULL).get_id() == boost::this_thread::get_id()
-        || boost::thread(&ThreadSecureMsgPow, (void*) NULL).get_id() == boost::this_thread::get_id())
+    secureMsgThread = boost::thread(&ThreadSecureMsg, (void*) NULL);
+    secureMsgPowThread = boost::thread(&ThreadSecureMsgPow, (void*) NULL);
+    if (secureMsgThread.get_id() == boost::this_thread::get_id()
+        || secureMsgPowThread.get_id() == boost::this_thread::get_id())
     {
         printf("SecureMsgEnable could not start threads, secure messaging disabled.\n");
         fSecMsgEnabled = false;
@@ -1297,9 +1276,13 @@ bool SecureMsgDisable()
 
     }; // LOCK(cs_smsg);
 
-    // -- allow time for threads to stop
-    sleep(3); // seconds
-    // TODO be certain that threads have stopped
+    secureMsgThread.interrupt();
+    secureMsgPowThread.interrupt();
+    if (secureMsgThread.joinable())
+        secureMsgThread.join();
+    if (secureMsgThread.joinable())
+        secureMsgPowThread.join();
+    
 
     if (smsgDB)
     {
@@ -1910,7 +1893,9 @@ static int SecureMsgInsertAddress(CKeyID& hashKey, CPubKey& pubKey, SecMsgDB& ad
         printf("Write pair failed.\n");
         return 1;
     };
-
+    CBitcreditAddress address;
+    address.Set(hashKey);
+	printf("Add public key of %s to database\n", address.ToString().c_str());
     return 0;
 };
 
@@ -1934,12 +1919,10 @@ static bool ScanBlock(CBlock& block, SecMsgDB& addrpkdb,
     uint32_t& nTransactions, uint32_t& nInputs, uint32_t& nPubkeys, uint32_t& nDuplicates)
 {
     // -- should have LOCK(cs_smsg) where db is opened
-    BOOST_FOREACH(CTransaction& tx, block.vtx)
+    BOOST_FOREACH(const CTransaction& tx, block.vtx)
     {
-        //TODO fix the checks
         if (tx.IsCoinBase())
-//        if (!tx.IsStandard())
-            continue; // leave out coinbase and others
+            continue; // leave out coinbase
 
 
         /*
@@ -1953,93 +1936,86 @@ static bool ScanBlock(CBlock& block, SecMsgDB& addrpkdb,
 
         */
 
-        for (unsigned int i = 0; i < tx.vin.size(); i++)
+        for (size_t i = 0; i < tx.vin.size(); i++)
         {
-/*            if (tx.nVersion == ANON_TXN_VERSION
+/*
+            TODO ???
+            if (tx.nVersion == ANON_TXN_VERSION
                 && tx.vin[i].IsAnonInput())
                 continue; // skip anon inputs
 */
-            const CScript *script = &tx.vin[i].scriptSig;
+            const CScript &script = tx.vin[i].scriptSig;
 
             opcodetype opcode;
             std::vector<unsigned char> vch;
-            CScript::const_iterator pc = script->begin();
-            CScript::const_iterator pend = script->end();
 
-            uint256 prevoutHash;
+            uint256 prevoutHash, blockHash;
 
             // -- matching address is in scriptPubKey of previous tx output
-            while (pc < pend)
+            for (CScript::const_iterator pc = script.begin(); script.GetOp(pc, opcode, vch); )
             {
-                if (!script->GetOp(pc, opcode, vch))
-                    break;
                 // -- opcode is the length of the following data, compressed public key is always 33
                 if (opcode == 33)
                 {
                     CPubKey pubKey(vch);
 
-                    if (!pubKey.IsValid()
-                        || !pubKey.IsCompressed())
+                    if (!pubKey.IsValid())
                     {
                         printf("Public key is invalid %s.\n", ValueString(vch).c_str());
                         continue;
-                    };
+                    }
 
                     prevoutHash = tx.vin[i].prevout.hash;
                     CTransaction txOfPrevOutput;
-                    if (!ReadTransaction(txOfPrevOutput, CDiskTxPos(CBlockIndex(block).GetBlockPos(), i), prevoutHash))
-//                    if (!txdb.ReadDiskTx(prevoutHash, txOfPrevOutput))
+                    
+                    if (!GetTransaction(prevoutHash, txOfPrevOutput, blockHash, true))
                     {
-                        printf("Could not get transaction for hash: %s.\n", prevoutHash.ToString().c_str());
+                        printf("Could not get transaction %s (output %d) referenced by input #%d of transaction %s in block %s\n", prevoutHash.ToString().c_str(), tx.vin[i].prevout.n, (int) i, tx.GetHash().ToString().c_str(), block.GetHash().ToString().c_str());
                         continue;
-                    };
+                    }
 
                     unsigned int nOut = tx.vin[i].prevout.n;
                     if (nOut >= txOfPrevOutput.vout.size())
                     {
-                        printf("Output %u, not in transaction: %s.\n", nOut, prevoutHash.ToString().c_str());
+                        printf("Output %u, not in transaction: %s\n", nOut, prevoutHash.ToString().c_str());
                         continue;
-                    };
+                    }
 
-                    const CTxOut *txOut = &txOfPrevOutput.vout[nOut];
+                    const CTxOut &txOut = txOfPrevOutput.vout[nOut];
 
                     CTxDestination addressRet;
-                    if (!ExtractDestination(txOut->scriptPubKey, addressRet))
+                    if (!ExtractDestination(txOut.scriptPubKey, addressRet))
                     {
-                        printf("ExtractDestination failed: %s.\n", prevoutHash.ToString().c_str());
-                        break;
-                    };
-
+                        printf("ExtractDestination failed: %s\n", prevoutHash.ToString().c_str());
+                        continue;
+                    }
 
                     CBitcreditAddress coinAddress(addressRet);
                     CKeyID hashKey;
                     if (!coinAddress.GetKeyID(hashKey))
                     {
-                        printf("coinAddress.GetKeyID failed: %s.\n", coinAddress.ToString().c_str());
-                        break;
-                    };
+                        printf("coinAddress.GetKeyID failed: %s\n", coinAddress.ToString().c_str());
+                        continue;
+                    }
+                    
+                    if (hashKey != pubKey.GetID())
+                        continue;
 
                     int rv = SecureMsgInsertAddress(hashKey, pubKey, addrpkdb);
-                    if (rv != 0)
-                    {
-                        if (rv == 4)
-                            nDuplicates++;
-                        break;
-                    };
-                    nPubkeys++;
-                    break;
-                };
+                    nPubkeys += (rv == 0);
+                    nDuplicates += (rv == 4);
+                }
 
                 //printf("opcode %d, %s, value %s.\n", opcode, GetOpName(opcode), ValueString(vch).c_str());
-            };
+            }
             nInputs++;
-        };
+        }
         nTransactions++;
 
         if (nTransactions % 10000 == 0) // for ScanChainForPublicKeys
         {
             printf("Scanning transaction no. %u.\n", nTransactions);
-        };
+        }
     };
     return true;
 };
@@ -2080,7 +2056,7 @@ bool SecureMsgScanBlock(CBlock& block)
     return true;
 };
 
-bool ScanChainForPublicKeys(CBlockIndex* pindexStart)
+bool ScanChainForPublicKeys(CBlockIndex* pindexStart, size_t n)
 {
     printf("Scanning block chain for public keys.\n");
     int64_t nStart = GetTimeMillis();
@@ -2106,7 +2082,7 @@ bool ScanChainForPublicKeys(CBlockIndex* pindexStart)
             return false;
 
         CBlockIndex* pindex = pindexStart;
-        while (pindex)
+        for (size_t i = 0; pindex != NULL && i < n; i++, pindex = pindex->pprev)
         {
             nBlocks++;
             CBlock block;
@@ -2114,8 +2090,6 @@ bool ScanChainForPublicKeys(CBlockIndex* pindexStart)
 
             ScanBlock(block, addrpkdb,
                 nTransactions, nInputs, nPubkeys, nDuplicates);
-
-            pindex = pindex->pprev;
         };
 
         addrpkdb.TxnCommit();
@@ -2133,10 +2107,10 @@ bool SecureMsgScanBlockChain()
     TRY_LOCK(cs_main, lockMain);
     if (lockMain)
     {
-        CBlockIndex indexScan(Params().GenesisBlock());
+        CBlockIndex *indexScan = chainActive.Tip();
 
         try { // -- in try to catch errors opening db,
-            if (!ScanChainForPublicKeys(&indexScan))
+            if (!ScanChainForPublicKeys(indexScan, indexScan->nHeight))
                 return false;
         } catch (std::exception& e)
         {
@@ -2662,16 +2636,25 @@ int SecureMsgGetStoredKey(CKeyID& ckid, CPubKey& cpkOut)
         LOCK(cs_smsgDB);
         SecMsgDB addrpkdb;
 
-        if (!addrpkdb.Open("r"))
+        if (!addrpkdb.Open("r")) {
+            printf("addrpkdb. Open() failed.\n");
             return 1;
+        }
 
         if (!addrpkdb.ReadPK(ckid, cpkOut))
         {
-            //printf("addrpkdb.Read failed: %s.\n", coinAddress.ToString().c_str());
+            CBitcreditAddress coinAddress;
+            coinAddress.Set(ckid);
+            printf("addrpkdb.Read failed: %s.\n", coinAddress.ToString().c_str());
             return 2;
         };
     }
-
+    
+    if (fDebugSmsg) {
+        CBitcreditAddress coinAddress;
+        coinAddress.Set(ckid);
+        printf("SecureMsgGetStoredKey(): found public key of %s\n", coinAddress.ToString().c_str());
+    }
     return 0;
 };
 
@@ -3121,21 +3104,13 @@ int SecureMsgValidate(unsigned char *pHeader, unsigned char *pPayload, uint32_t 
     for (int i = 0; i < 32; i+=4)
         memcpy(civ+i, &nonse, 4);
 
-    HMAC_CTX ctx;
-    HMAC_CTX_init(&ctx);
-
-    unsigned int nBytes;
-    if (!HMAC_Init_ex(&ctx, &civ[0], 32, EVP_sha256(), NULL)
-        || !HMAC_Update(&ctx, (unsigned char*) pHeader+4, SMSG_HDR_LEN-4)
-        || !HMAC_Update(&ctx, (unsigned char*) pPayload, nPayload)
-        || !HMAC_Update(&ctx, pPayload, nPayload)
-        || !HMAC_Final(&ctx, sha256Hash, &nBytes)
-        || nBytes != 32)
-    {
-        if (fDebugSmsg)
-            printf("HMAC error.\n");
-        rv = 1; // error
-    } else
+    
+    CHMAC_SHA256 hmac(&civ[0], 32);
+    hmac.Write((unsigned char*) pHeader+4, SMSG_HDR_LEN-4);
+    hmac.Write((unsigned char*) pPayload, nPayload);
+    hmac.Write((unsigned char*) pPayload, nPayload);
+    hmac.Finalize(sha256Hash);
+    
     {
         if (sha256Hash[31] == 0
             && sha256Hash[30] == 0
@@ -3153,7 +3128,6 @@ int SecureMsgValidate(unsigned char *pHeader, unsigned char *pPayload, uint32_t 
             rv = 3; // checksum mismatch
         }
     }
-    HMAC_CTX_cleanup(&ctx);
 
     return rv;
 };
@@ -3178,8 +3152,6 @@ int SecureMsgSetHash(unsigned char *pHeader, unsigned char *pPayload, uint32_t n
     unsigned char sha256Hash[32];
 
     bool found = false;
-    HMAC_CTX ctx;
-    HMAC_CTX_init(&ctx);
 
     uint32_t nonse = 0;
 
@@ -3199,15 +3171,11 @@ int SecureMsgSetHash(unsigned char *pHeader, unsigned char *pPayload, uint32_t n
         for (int i = 0; i < 32; i+=4)
             memcpy(civ+i, &nonse, 4);
 
-        unsigned int nBytes;
-        if (!HMAC_Init_ex(&ctx, &civ[0], 32, EVP_sha256(), NULL)
-            || !HMAC_Update(&ctx, (unsigned char*) pHeader+4, SMSG_HDR_LEN-4)
-            || !HMAC_Update(&ctx, (unsigned char*) pPayload, nPayload)
-            || !HMAC_Update(&ctx, pPayload, nPayload)
-            || !HMAC_Final(&ctx, sha256Hash, &nBytes)
-            //|| !HMAC_Final(&ctx, &vchHash[0], &nBytes)
-            || nBytes != 32)
-            break;
+        CHMAC_SHA256 hmac(&civ[0], 32);
+        hmac.Write((unsigned char*) pHeader+4, SMSG_HDR_LEN-4);
+        hmac.Write((unsigned char*) pPayload, nPayload);
+        hmac.Write((unsigned char*) pPayload, nPayload);
+        hmac.Finalize(sha256Hash);
 
         /*
         if (CBigNum(vchHash) <= bnTarget)
@@ -3240,8 +3208,6 @@ int SecureMsgSetHash(unsigned char *pHeader, unsigned char *pPayload, uint32_t n
         }
         nonse++;
     };
-
-    HMAC_CTX_cleanup(&ctx);
 
     if (!fSecMsgEnabled)
     {
@@ -3359,54 +3325,26 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
 
     // -- Generate 16 random bytes as IV.
-    RandAddSeedPerfmon();
-    RAND_bytes(&smsg.iv[0], 16);
+    GetRandBytes(smsg.iv, sizeof(smsg.iv));
 
-
-    // -- Generate a new random EC key pair with private key called r and public key called R.
+    // -- Compute a shared secret vchP derived from a new private key keyR and the public key of addressTo
+    secure_buffer vchP;
     CKey keyR;
     keyR.MakeNewKey(true); // make compressed key
-    CPrivKey keyr(keyR.begin(), keyR.end());
-    EC_KEY *pkeyr = (EC_KEY *) &keyr[0];
+    memcpy(smsg.cpkR, &keyR.GetPubKey()[0], 33); // copy public key
 
-    secure_buffer vchP;
-    vchP.resize(32);
-
-    // always seems to be 32, worth checking?
-    //int field_size = EC_GROUP_get_degree(EC_KEY_get0_group(pkeyr));
-    //int secret_len = (field_size+7)/8;
-    //printf("secret_len %d.\n", secret_len);
-
-    // -- ECDH_compute_key returns the same P if fed compressed or uncompressed public keys
-    ECDH_set_method(pkeyr, ECDH_OpenSSL());
-    int lenP = ECDH_compute_key(&vchP[0], 32, 
-                                EC_KEY_get0_public_key((const EC_KEY *) &cpkDestK[0]),
-                                pkeyr, NULL);
-
-    if (lenP != 32)
+    if (!DeriveKey(vchP, keyR, cpkDestK))
     {
-        printf("ECDH_compute_key failed, lenP: %d.\n", lenP);
+        printf("ECDH key computation failed\n");
         return 6;
-    };
+    }
 
-    CPubKey cpkR = keyR.GetPubKey();
-    if (!cpkR.IsValid()
-        || !cpkR.IsCompressed())
-    {
-        printf("Could not get public key for key R.\n");
-        return 1;
-    };
-
-    memcpy(smsg.cpkR, &cpkR[0], 33);
-
-
-    // -- Use public key P and calculate the SHA512 hash H.
+    // -- Use vchP and calculate the SHA512 hash H.
     //    The first 32 bytes of H are called key_e and the last 32 bytes are called key_m.
-    secure_buffer vchHashed;
-    vchHashed.resize(64); // 512 bit
-    SHA512(&vchP[0], vchP.size(), (unsigned char*)&vchHashed[0]);
-    secure_buffer key_e(&vchHashed[0], &vchHashed[0]+32);
-    secure_buffer key_m(&vchHashed[32], &vchHashed[32]+32);
+    secure_buffer vchHashed(64); // 512 bit
+    CSHA512 sha512;
+    sha512.Write(&vchP[0], vchP.size());
+    sha512.Finalize(&vchHashed[0]);
 
 
     secure_buffer vchPayload;
@@ -3490,7 +3428,7 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
 
     SecMsgCrypter crypter;
-    crypter.SetKey(key_e, smsg.iv);
+    crypter.SetKey(vchHashed, smsg.iv);
     std::vector<unsigned char> vchCiphertext;
 
     if (!crypter.Encrypt(&vchPayload[0], vchPayload.size(), vchCiphertext))
@@ -3511,25 +3449,10 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
     // -- Calculate a 32 byte MAC with HMACSHA256, using key_m as salt
     //    Message authentication code, (hash of timestamp + destination + payload)
-    bool fHmacOk = true;
-    unsigned int nBytes = 32;
-    HMAC_CTX ctx;
-    HMAC_CTX_init(&ctx);
-
-    if (!HMAC_Init_ex(&ctx, &key_m[0], 32, EVP_sha256(), NULL)
-        || !HMAC_Update(&ctx, (unsigned char*) &smsg.timestamp, sizeof(smsg.timestamp))
-        || !HMAC_Update(&ctx, &vchCiphertext[0], vchCiphertext.size())
-        || !HMAC_Final(&ctx, smsg.mac, &nBytes)
-        || nBytes != 32)
-        fHmacOk = false;
-
-    HMAC_CTX_cleanup(&ctx);
-
-    if (!fHmacOk)
-    {
-        printf("Could not generate MAC.\n");
-        return 10;
-    };
+    CHMAC_SHA256 hmac(&vchHashed[32], 32);
+    hmac.Write((unsigned char*) &smsg.timestamp, sizeof(smsg.timestamp));
+    hmac.Write(&vchCiphertext[0], vchCiphertext.size());
+    hmac.Finalize(smsg.mac);
 
 
     return 0;
@@ -3740,7 +3663,6 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
     };
 
 
-
     // -- Fetch private key k, used to decrypt
     CBitcreditAddress coinAddrDest;
     CKeyID ckidDest;
@@ -3775,52 +3697,27 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
 
     // -- Do an EC point multiply with private key k and public key R. This gives you public key P.
     secure_buffer vchP;
-    vchP.resize(32);
-    secure_buffer keyk(keyDest.begin(), keyDest.end());
-	EC_KEY *pkeyk = (EC_KEY *) &keyk[0];
-
-    ECDH_set_method(pkeyk, ECDH_OpenSSL());
-    int lenPdec = ECDH_compute_key(&vchP[0], 32, 
-                                   EC_KEY_get0_public_key((const EC_KEY *) &keyR[0]), 
-                                   pkeyk, NULL);
-
-    if (lenPdec != 32)
+    if (!DeriveKey(vchP, keyDest, keyR))
     {
-        printf("ECDH_compute_key failed, lenPdec: %d.\n", lenPdec);
+        printf("ECDH_compute_key failed\n");
         return 1;
     };
 
 
     // -- Use public key P to calculate the SHA512 hash H.
     //    The first 32 bytes of H are called key_e and the last 32 bytes are called key_m.
-    secure_buffer vchHashedDec;
-    vchHashedDec.resize(64);    // 512 bits
-    SHA512(&vchP[0], vchP.size(), (unsigned char*)&vchHashedDec[0]);
-    secure_buffer key_e(&vchHashedDec[0], &vchHashedDec[0]+32);
-    secure_buffer key_m(&vchHashedDec[32], &vchHashedDec[32]+32);
+    secure_buffer vchHashedDec(64); // 512 bits
+    CSHA512 sha512;
+    sha512.Write(&vchP[0], vchP.size());
+    sha512.Finalize(&vchHashedDec[0]);
 
 
     // -- Message authentication code, (hash of timestamp + destination + payload)
     unsigned char MAC[32];
-    bool fHmacOk = true;
-    unsigned int nBytes = 32;
-    HMAC_CTX ctx;
-    HMAC_CTX_init(&ctx);
-
-    if (!HMAC_Init_ex(&ctx, &key_m[0], 32, EVP_sha256(), NULL)
-        || !HMAC_Update(&ctx, (unsigned char*) &psmsg->timestamp, sizeof(psmsg->timestamp))
-        || !HMAC_Update(&ctx, pPayload, nPayload)
-        || !HMAC_Final(&ctx, MAC, &nBytes)
-        || nBytes != 32)
-        fHmacOk = false;
-
-    HMAC_CTX_cleanup(&ctx);
-
-    if (!fHmacOk)
-    {
-        printf("Could not generate MAC.\n");
-        return 1;
-    };
+    CHMAC_SHA256 hmac(&vchHashedDec[32], 32);
+    hmac.Write((unsigned char*) &psmsg->timestamp, sizeof(psmsg->timestamp));
+    hmac.Write(pPayload, nPayload);
+    hmac.Finalize(MAC);
 
     if (memcmp(MAC, psmsg->mac, 32) != 0)
     {
@@ -3834,7 +3731,7 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
         return 0;
 
     SecMsgCrypter crypter;
-    crypter.SetKey(key_e, psmsg->iv);
+    crypter.SetKey(vchHashedDec, psmsg->iv);
     secure_buffer vchPayload;
     if (!crypter.Decrypt(pPayload, nPayload, vchPayload))
     {
@@ -3900,40 +3797,26 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
         uint160 ui160(vchUint160);
         CKeyID ckidFrom(ui160);
 
-        CBitcreditAddress coinAddrFrom;
-        coinAddrFrom.Set(ckidFrom);
-        if (!coinAddrFrom.IsValid())
-        {
-            printf("From Addess is invalid.\n");
-            return 1;
-        };
-
         std::vector<unsigned char> vchSig;
         vchSig.resize(65);
 
         memcpy(&vchSig[0], &vchPayload[1+20], 65);
 
-        CKey keyFrom;
-        keyFrom.SignCompact(Hash(msg.vchMessage.begin(), msg.vchMessage.end()-1), vchSig);
-        CPubKey cpkFromSig = keyFrom.GetPubKey();
-        if (!cpkFromSig.IsValid())
+        CPubKey cpkFromSig;
+        bool valid = cpkFromSig.RecoverCompact(Hash(msg.vchMessage.begin(), msg.vchMessage.end()-1), vchSig);
+        if (!valid)
         {
             printf("Signature validation failed.\n");
             return 1;
         };
 
-        // -- get address for the compressed public key
-        CBitcreditAddress coinAddrFromSig;
-        coinAddrFromSig.Set(cpkFromSig.GetID());
-
-        if (!(coinAddrFrom == coinAddrFromSig))
+        if (ckidFrom != cpkFromSig.GetID())
         {
-            printf("Signature validation failed.\n");
+            printf("Signature validation failed (address mismatch)\n");
             return 1;
         };
-
-        cpkFromSig = keyFrom.GetPubKey();
-
+	
+	
         int rv = 5;
         try {
             rv = SecureMsgInsertAddress(ckidFrom, cpkFromSig);
@@ -3954,8 +3837,11 @@ int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeade
                 printf("Error adding sender public key to db.\n");
                 break;
         };
-
+        
+        CBitcreditAddress coinAddrFrom;
+        coinAddrFrom.Set(ckidFrom);
         msg.sFromAddress = coinAddrFrom.ToString();
+        msg.sToAddress = address;
     };
 
     if (fDebugSmsg)

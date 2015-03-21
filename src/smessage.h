@@ -355,7 +355,6 @@ int SecureMsgReadIni();
 int SecureMsgWriteIni();
 
 bool SecureMsgStart(bool fDontStart, bool fScanChain);
-bool SecureMsgShutdown();
 
 bool SecureMsgEnable();
 bool SecureMsgDisable();
@@ -365,7 +364,7 @@ bool SecureMsgSendData(CNode* pto, bool fSendTrickle);
 
 
 bool SecureMsgScanBlock(CBlock& block);
-bool ScanChainForPublicKeys(CBlockIndex* pindexStart);
+bool ScanChainForPublicKeys(CBlockIndex* pindexStart, size_t n);
 bool SecureMsgScanBlockChain();
 bool SecureMsgScanBuckets();
 

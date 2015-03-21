@@ -20,8 +20,16 @@ extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spiri
 
 char* getTimeString(int64_t time, char *cbuf, size_t size)
 {
-    std::string str = boost::posix_time::to_simple_string(boost::posix_time::from_time_t(time));
-    memcpy(cbuf, str.data(), std::min(size, str.size()));
+//    std::string str = boost::posix_time::to_simple_string(boost::posix_time::from_time_t(time));
+//    memcpy(cbuf, str.c_str(), std::min(size, str.size()+1));
+    char tmp[11+20];
+    const time_t tm = time;
+    struct tm *_time = localtime(&tm);
+    int length = sprintf(tmp, "%d-%.2d-%.2d %.2d:%.2d:%.2d", 1900 + _time->tm_year, 1 + _time->tm_mon, _time->tm_mday, _time->tm_hour, _time->tm_min, _time->tm_sec);
+    if (length > 0)
+        memcpy(cbuf, tmp, length+1);
+    else
+        cbuf[0] = '\0';
     return cbuf;
 }
 

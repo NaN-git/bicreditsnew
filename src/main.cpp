@@ -1315,7 +1315,7 @@ bool GetTransaction(const uint256 &hash, CTransaction &txOut, uint256 &hashBlock
         if (fTxIndex) {
             CDiskTxPos postx;
             if (pblocktree->ReadTxIndex(hash, postx)) {
-                if (!ReadTransaction(txOut, postx, hashBlock))
+                if (ReadTransaction(txOut, postx, hashBlock))
                     return false;
                 CAutoFile file(OpenBlockFile(postx, true), SER_DISK, CLIENT_VERSION);
                 if (file.IsNull())

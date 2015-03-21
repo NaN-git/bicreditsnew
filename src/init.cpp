@@ -132,7 +132,7 @@ void Shutdown()
     /// module was initialized.
     RenameThread("bitcredit-shutoff");
     mempool.AddTransactionsUpdated(1);
-    SecureMsgShutdown();
+    SecureMsgDisable();
     StopRPCThreads();
 #ifdef ENABLE_WALLET
     if (pwalletMain)
