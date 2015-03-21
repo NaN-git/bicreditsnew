@@ -16,7 +16,6 @@
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
 
-#include "core.h"
 #include "ringsig.h"
 
 // Class that provides access to a LevelDB. Note that this class is frequently
@@ -204,15 +203,6 @@ public:
     {
         return Write(std::string("version"), nVersion);
     }
-    
-    
-    bool WriteKeyImage(ec_point& keyImage, CKeyImageSpent& keyImageSpent);
-    bool ReadKeyImage(ec_point& keyImage, CKeyImageSpent& keyImageSpent);
-    bool EraseKeyImage(ec_point& keyImage);
-    
-    bool WriteAnonOutput(CPubKey& pkCoin, CAnonOutput& ao);
-    bool ReadAnonOutput(CPubKey& pkCoin, CAnonOutput& ao);
-    bool EraseAnonOutput(CPubKey& pkCoin);
     
     bool ReadSyncCheckpoint(uint256& hashCheckpoint);
     bool WriteSyncCheckpoint(uint256 hashCheckpoint);
