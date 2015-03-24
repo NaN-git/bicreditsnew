@@ -74,13 +74,13 @@ bool CCrypter::Encrypt(const CKeyingMaterial& vchPlaintext, std::vector<unsigned
     return true;
 }
 
-bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingMaterial& vchPlaintext)
+bool CCrypter::Decrypt(const unsigned char* pCiphertext, size_t nCiphertext, CKeyingMaterial& vchPlaintext)
 {
     if (!fKeySet)
         return false;
 
     // plaintext will always be equal to or lesser than length of ciphertext
-    int nLen = vchCiphertext.size();
+    int nLen = nCiphertext;
     int nPLen = nLen, nFLen = 0;
 
     vchPlaintext = CKeyingMaterial(nPLen);
@@ -91,7 +91,7 @@ bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingM
 
     EVP_CIPHER_CTX_init(&ctx);
     if (fOk) fOk = EVP_DecryptInit_ex(&ctx, EVP_aes_256_cbc(), NULL, chKey, chIV) != 0;
-    if (fOk) fOk = EVP_DecryptUpdate(&ctx, &vchPlaintext[0], &nPLen, &vchCiphertext[0], nLen) != 0;
+    if (fOk) fOk = EVP_DecryptUpdate(&ctx, &vchPlaintext[0], &nPLen, pCiphertext, nLen) != 0;
     if (fOk) fOk = EVP_DecryptFinal_ex(&ctx, (&vchPlaintext[0]) + nPLen, &nFLen) != 0;
     EVP_CIPHER_CTX_cleanup(&ctx);
 
@@ -101,6 +101,10 @@ bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingM
     return true;
 }
 
+bool CCrypter::Decrypt(const std::vector<unsigned char>& vchCiphertext, CKeyingMaterial& vchPlaintext)
+{
+    return Decrypt(&vchCiphertext[0], vchCiphertext.size(), vchPlaintext);
+}
 
 bool EncryptSecret(const CKeyingMaterial& vMasterKey, const CKeyingMaterial &vchPlaintext, const uint256& nIV, std::vector<unsigned char> &vchCiphertext)
 {

@@ -216,6 +216,7 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase, bool anonymizeOnly
     if (!IsLocked())
     {
         fWalletUnlockAnonymizeOnly = anonymizeOnly;
+        SecureMsgWalletUnlocked();
         return true;
     }
 
@@ -245,10 +246,10 @@ bool CWallet::Unlock(const SecureString& strWalletPassphrase, bool anonymizeOnly
             if (CCryptoKeyStore::Unlock(vMasterKey))
             {
                 fWalletUnlockAnonymizeOnly = anonymizeOnly;
+                SecureMsgWalletUnlocked();
                 return true;
             }
         }
-        SecureMsgWalletUnlocked();
     }
     return false;
 }

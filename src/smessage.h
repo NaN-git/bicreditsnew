@@ -17,35 +17,15 @@
 #include "lz4/lz4.h"
 
 
-/* Format characters for (s)size_t and ptrdiff_t */
-#if defined(_MSC_VER) || defined(__MSVCRT__)
-/* (s)size_t and ptrdiff_t have the same size specifier in MSVC:
-http://msdn.microsoft.com/en-us/library/tcxf1dw6%28v=vs.100%29.aspx
-*/
-#    define PRIszx "Ix"
-#    define PRIszu "Iu"
-#    define PRIszd "Id"
-#    define PRIpdx "Ix"
-#    define PRIpdu "Iu"
-#    define PRIpdd "Id"
-#else /* C99 standard */
-#    define PRIszx "zx"
-#    define PRIszu "zu"
-#    define PRIszd "zd"
-#    define PRIpdx "tx"
-#    define PRIpdu "tu"
-#    define PRIpdd "td"
-#endif
-
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > secure_buffer;
 
-const unsigned int SMSG_HDR_LEN         = 104;               // length of unencrypted header, 4 + 2 + 1 + 8 + 16 + 33 + 32 + 4 +4
-const unsigned int SMSG_PL_HDR_LEN      = 1+20+65+4;         // length of encrypted header in payload
+const unsigned int SMSG_HDR_LEN         = 84;                // length of unencrypted header, 4 + 4 + 8 + 33 + 3 + 32
+const unsigned int SMSG_PL_HDR_LEN      = 4+33+1+65;         // length of encrypted header in payload
 
 const unsigned int SMSG_BUCKET_LEN      = 60 * 10;           // in seconds
 const unsigned int SMSG_RETENTION       = 60 * 60 * 48;      // in seconds
 const unsigned int SMSG_SEND_DELAY      = 2;                 // in seconds, SecureMsgSendData will delay this long between firing
-const unsigned int SMSG_THREAD_DELAY    = 20;
+const unsigned int SMSG_THREAD_DELAY    = 5;
 
 const unsigned int SMSG_TIME_LEEWAY     = 60;
 const unsigned int SMSG_TIME_IGNORE     = 90;                // seconds that a peer is ignored for if they fail to deliver messages for a smsgWant
@@ -89,35 +69,74 @@ extern CCriticalSection cs_smsgDB;
 
 
 #pragma pack(push, 1)
-class SecureMessage
-{
-public:
-    SecureMessage()
-    {
-        nPayload = 0;
-        pPayload = NULL;
-    };
+struct PayloadHeader {
+    unsigned char  cpkS[33]; // public key for reply
+    unsigned char  lenPlain[4];
+    unsigned char  sigKeyVersion[1]; // version of public key hash derived form signature
+    unsigned char  signature[65]; // provides authentication, signature[0] == 0 -> anon message
+};
 
-    ~SecureMessage()
-    {
-        if (pPayload)
-            delete[] pPayload;
-        pPayload = NULL;
-    };
 
-    unsigned char   hash[4];
-    unsigned char   version[2];
-    unsigned char   flags;
-    int64_t         timestamp;
-    unsigned char   iv[16];
-    unsigned char   cpkR[33];
-    unsigned char   mac[32];
-    unsigned char   nonse[4];
+struct SecureMessageHeader {
+    uint32_t        nVersion;
     uint32_t        nPayload;
-    unsigned char*  pPayload;
+    int64_t         timestamp;
+    unsigned char   cpkR[33];
+    unsigned char   reserved[3];
+    unsigned char   mac[32];
 
+    unsigned char   hash[32];
+
+    SecureMessageHeader() {}
+    SecureMessageHeader(const unsigned char *header) {
+        memcpy(this, header, SMSG_HDR_LEN);
+    }
+    
+    unsigned char *begin() const {
+        return (unsigned char*) &nVersion;
+    }
+    unsigned char *end() const {
+        return (unsigned char*) (hash + sizeof(hash));
+    }
+
+
+    unsigned int GetSerializeSize(int, int=0) const
+    {
+        return (char*) hash - (char*) this;
+    }
+
+    template<typename Stream>
+    void Serialize(Stream& s, int, int=0) const
+    {
+        s.write((char*) this, (char*) hash - (char*) this);
+    }
+
+    template<typename Stream>
+    void Unserialize(Stream& s, int, int=0)
+    {
+        s.read((char*) this, (char*) hash - (char*) this);
+    }
 };
 #pragma pack(pop)
+
+class SecureMessage : public SecureMessageHeader {
+public:
+    std::vector<unsigned char> vchPayload;
+
+    SecureMessageHeader *Header() {
+        return (SecureMessageHeader *) this;
+    }
+
+    SecureMessage() { }
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(*this->Header());
+        READWRITE(this->vchPayload);
+    }
+};
 
 
 class MessageData
@@ -128,13 +147,23 @@ public:
     std::string    sToAddress;
     std::string    sFromAddress;
     secure_buffer  vchMessage;         // null terminated plaintext
+
+    ADD_SERIALIZE_METHODS;
+
+    template <typename Stream, typename Operation>
+    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
+        READWRITE(this->timestamp);
+        READWRITE(this->sToAddress);
+        READWRITE(this->sFromAddress);
+        READWRITE(this->vchMessage);
+    }
 };
 
 
 class SecMsgToken
 {
 public:
-    SecMsgToken(int64_t ts, unsigned char* p, int np, long int o)
+    SecMsgToken(int64_t ts, const unsigned char* p, int np, long int o)
     {
         timestamp = ts;
 
@@ -157,8 +186,8 @@ public:
         return timestamp < y.timestamp;
     }
 
-    int64_t                     timestamp;    // doesn't need to be full 64 bytes?
-    unsigned char               sample[8];    // first 8 bytes of payload - a hash
+    int64_t                     timestamp;
+    unsigned char               sample[8];    // a message hash
     int64_t                     offset;       // offset
 
 };
@@ -195,15 +224,6 @@ public:
     {
 		assert(vchVersion.size() == sizeof(unsigned char));
         return vchVersion[0];
-    }
-};
-
-class CKeyID_B : public CKeyID
-{
-public:
-    unsigned int* GetPPN()
-    {
-        return pn;
     }
 };
 
@@ -245,42 +265,6 @@ public:
 
     bool fNewAddressRecv;
     bool fNewAddressAnon;
-};
-
-
-class SecMsgCrypter
-{
-private:
-    unsigned char chKey[32];
-    unsigned char chIV[16];
-    bool fKeySet;
-public:
-
-    SecMsgCrypter()
-    {
-        // Try to keep the key data out of swap (and be a bit over-careful to keep the IV that we don't even use out of swap)
-        // Note that this does nothing about suspend-to-disk (which will put all our key data on disk)
-        // Note as well that at no point in this program is any attempt made to prevent stealing of keys by reading the memory of the running process.
-        LockedPageManager::Instance().LockRange(&chKey[0], sizeof chKey);
-        LockedPageManager::Instance().LockRange(&chIV[0], sizeof chIV);
-        fKeySet = false;
-    }
-
-    ~SecMsgCrypter()
-    {
-        // clean key
-        memset(&chKey, 0, sizeof chKey);
-        memset(&chIV, 0, sizeof chIV);
-        fKeySet = false;
-
-        LockedPageManager::Instance().UnlockRange(&chKey[0], sizeof chKey);
-        LockedPageManager::Instance().UnlockRange(&chIV[0], sizeof chIV);
-    }
-
-    bool SetKey(const secure_buffer& vchNewKey, unsigned char* chNewIV);
-    bool SetKey(const unsigned char* chNewKey, unsigned char* chNewIV);
-    bool Encrypt(unsigned char* chPlaintext, uint32_t nPlain, std::vector<unsigned char> &vchCiphertext);
-    bool Decrypt(unsigned char* chCiphertext, uint32_t nCipher, secure_buffer &vchPlaintext);
 };
 
 
@@ -366,13 +350,16 @@ bool SecureMsgSendData(CNode* pto, bool fSendTrickle);
 bool SecureMsgScanBlock(CBlock& block);
 bool ScanChainForPublicKeys(CBlockIndex* pindexStart, size_t n);
 bool SecureMsgScanBlockChain();
-bool SecureMsgScanBuckets();
+int SecureMsgScanBuckets(std::string &, bool = false);
 
 
-int SecureMsgWalletUnlocked();
+static inline int SecureMsgWalletUnlocked() {
+    std::string error;
+    return SecureMsgScanBuckets(error, true);
+}
 int SecureMsgWalletKeyChanged(std::string sAddress, std::string sLabel, ChangeType mode);
 
-int SecureMsgScanMessage(unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload, bool reportToGui);
+int SecureMsgScanMessage(const SecureMessageHeader &smsg, const unsigned char *pPayload, bool reportToGui);
 
 int SecureMsgGetStoredKey(CKeyID& ckid, CPubKey& cpkOut);
 int SecureMsgGetLocalKey(CKeyID& ckid, CPubKey& cpkOut);
@@ -380,25 +367,22 @@ int SecureMsgGetLocalPublicKey(std::string& strAddress, std::string& strPublicKe
 
 int SecureMsgAddAddress(std::string& address, std::string& publicKey);
 
-int SecureMsgRetrieve(SecMsgToken &token, std::vector<unsigned char>& vchData);
+int SecureMsgRetrieve(SecMsgToken &token, SecureMessage &smsg);
 
 int SecureMsgReceive(CNode* pfrom, std::vector<unsigned char>& vchData);
 
-int SecureMsgStoreUnscanned(unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload);
-int SecureMsgStore(unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload, bool fUpdateBucket);
-int SecureMsgStore(SecureMessage& smsg, bool fUpdateBucket);
-
+int SecureMsgStoreUnscanned(const SecureMessageHeader &smsg, const unsigned char *pPayload);
+int SecureMsgStore(const SecureMessageHeader &smsg, const unsigned char *pPayload, bool fUpdateBucket);
+int SecureMsgStore(const SecureMessage &smsg, bool fUpdateBucket);
 
 
 int SecureMsgSend(std::string& addressFrom, std::string& addressTo, std::string& message, std::string& sError);
 
-int SecureMsgValidate(unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload);
-int SecureMsgSetHash(unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload);
+int SecureMsgValidate(const SecureMessageHeader &smsg, size_t nPayload);
 
 int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string& addressTo, std::string& message);
 
-int SecureMsgDecrypt(bool fTestOnly, std::string& address, unsigned char *pHeader, unsigned char *pPayload, uint32_t nPayload, MessageData& msg);
-int SecureMsgDecrypt(bool fTestOnly, std::string& address, SecureMessage& smsg, MessageData& msg);
+int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMessageHeader& smsg, const unsigned char *pPayload, MessageData& msg);
 
 
 
