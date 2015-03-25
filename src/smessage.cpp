@@ -2825,22 +2825,26 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
     keyS.MakeNewKey(true); // make compressed key
     CPubKey pubKeyS = keyS.GetPubKey();
 
-    // -- hash some entropy, the plaintext message and the public key
-    secure_buffer msgHash(64+4, 0);
-    GetRandBytes(&msgHash[0], 16); // get some entropy
-    sha256.Write(&msgHash[0], 16);
+    // -- hash the timestamp and plaintext
+    secure_buffer msgHash(96+4, 0);
+    sha256.Write((const unsigned char*) &smsg.timestamp, 8);
     sha256.Write((const unsigned char*) &*message.begin(), message.size());
-    sha256.Write(pubKeyS.begin(), 33);
     sha256.Finalize(&msgHash[0]);
+
+    // -- hash some entropy
+    GetRandBytes(&msgHash[32], 16);
+    sha256.Write(&msgHash[32], 16);
+    sha256.Write(pubKeyS.begin(), 33);
+    sha256.Finalize(&msgHash[32]); // use this as key for hmac
 
     // -- derive a new key pair, which is used for the encryption key computation
     CKey keyR;
     while (!keyR.IsValid()) {
-        CHMAC_SHA256 &hmac = *new (&sha512 + 1) CHMAC_SHA256(&msgHash[0], 32);
-        hmac.Write(&msgHash[64], 4); // prepend a counter
+        CHMAC_SHA256 &hmac = *new (&sha512 + 1) CHMAC_SHA256(&msgHash[32], 32);
+        hmac.Write(&msgHash[96], 4); // prepend a counter
         hmac.Write(keyS.begin(), 32);
-        hmac.Finalize(&msgHash[32]);
-        keyR.Set(&msgHash[32], &msgHash[64], true);
+        hmac.Finalize(&msgHash[64]);
+        keyR.Set(&msgHash[64], &msgHash[96], true);
         (*(uint32_t*) &msgHash[64])++;
         hmac.~CHMAC_SHA256();
     }
@@ -2923,8 +2927,8 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
         // -- sign the the new public key of keyR with the private key of addressFrom
         std::vector<unsigned char> vchSignature(65);
-        uint256 msg_hash = Hash(smsg.cpkR, smsg.cpkR + sizeof(smsg.cpkR));
-        keyFrom.SignCompact(msg_hash, vchSignature);
+        std::vector<unsigned char> hash(msgHash.begin(), msgHash.begin() + 32);
+        keyFrom.SignCompact(uint256(hash), vchSignature);
 
         header.sigKeyVersion[0] = ((CBitcreditAddress_B*) &coinAddrFrom)->getVersion(); // vchPayload[0] = coinAddrDest.nVersion;
         memcpy(header.signature, &vchSignature[0], vchSignature.size());
@@ -3228,27 +3232,26 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
     unsigned char* pMsgData = &vchPayload[SMSG_PL_HDR_LEN];
 
     try {
-        msg.vchMessage.resize(lenPlain + 1);
+        msg.sMessage.reserve(lenPlain + 1);
+        msg.sMessage.resize(lenPlain);
     }
     catch (std::exception& e) {
-        printf("msg.vchMessage.resize %u threw: %s.\n", lenPlain + 1, e.what());
+        printf("msg.vchMessage.resize %u threw: %s.\n", lenPlain, e.what());
         return 8;
     }
-
+    char *message = &msg.sMessage[0];
 
     if (lenPlain > 128) {
         // -- decompress
-        if (LZ4_decompress_safe((char*) pMsgData, (char*) &msg.vchMessage[0], lenData, lenPlain) != (int) lenPlain) {
+        if (LZ4_decompress_safe((char*) pMsgData, message, lenData, lenPlain) != (int) lenPlain) {
             printf("Could not decompress message data.\n");
             return 1;
         }
     }
     else {
         // -- plaintext
-        memcpy(&msg.vchMessage[0], pMsgData, lenPlain);
+        memcpy(message, pMsgData, lenPlain);
     }
-
-    msg.vchMessage[lenPlain] = '\0';
 
     if (fFromAnonymous) {
         // -- Anonymous sender
@@ -3256,12 +3259,14 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
         printf("from anon\n");
     }
     else {
-        printf("begin signature validation\n");
         CPubKey cpkFromSig;
         std::vector<unsigned char> vchSig(65);
         memcpy(&vchSig[0], header.signature, vchSig.size());
-        vchSig[0] &= 4;
-        bool valid = cpkFromSig.RecoverCompact(Hash(smsg.cpkR, smsg.cpkR + sizeof(smsg.cpkR)), vchSig);
+        vchSig[0] |= 4;
+        bool valid = cpkFromSig.RecoverCompact(
+            Hash(&smsg.timestamp, &smsg.timestamp + 1, message, message + lenPlain),
+            vchSig
+        );
         if (!valid) {
             printf("Signature validation failed.\n");
             return 1;
@@ -3294,17 +3299,25 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
 
         CBitcreditAddress coinAddrFrom;
         coinAddrFrom.Set(ckidFrom);
-        msg.sFromAddress = coinAddrFrom.ToString();
+        msg.sFromAddress = secure_string(coinAddrFrom.ToString().c_str());
     }
 
-    msg.sToAddress = address;
+    msg.sToAddress = secure_string(address.c_str());
     msg.timestamp = smsg.timestamp;
     // TODO insert new public key and link it with cpkFromSig 
 
     if (fDebugSmsg)
-        printf("Decrypted message for %s: %s.\n", address.c_str(), msg.vchMessage.data());
+        printf("Decrypted message for %s: %s.\n", address.c_str(), msg.sMessage.c_str());
 
     return 0;
 }
 
-
+int SecureMsgDecrypt(const SecMsgStored& smsgStored, MessageData &msg, std::string &errorMsg)
+{
+    SecureMessageHeader smsg(&smsgStored.vchMessage[0]);
+    const unsigned char* pPayload = &smsgStored.vchMessage[SMSG_HDR_LEN];
+    memcpy(smsg.hash, Hash(&pPayload[0], &pPayload[smsg.nPayload]).begin(), 32);
+    int error = SecureMsgDecrypt(false, smsgStored.sAddrTo, smsg, pPayload, msg);
+    errorMsg = "";
+    return error;
+}

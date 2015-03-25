@@ -583,16 +583,14 @@ Value smsginbox(const Array& params, bool fHelp)
                     continue;
                 
                 Object objM;
-                const unsigned char* pPayload = &smsgStored.vchMessage[SMSG_HDR_LEN];
-                SecureMessageHeader smsg(&smsgStored.vchMessage[0]);
-                memcpy(smsg.hash, Hash(&pPayload[0], &pPayload[smsg.nPayload]).begin(), 32);
-                int error = SecureMsgDecrypt(false, smsgStored.sAddrTo, smsg, pPayload, msg);
+                std::string errorMsg;
+                int error = SecureMsgDecrypt(smsgStored, msg, errorMsg);
                 if (!error) {
                     objM.push_back(Pair("received", getTimeString(smsgStored.timeReceived, cbuf, sizeof(cbuf))));
                     objM.push_back(Pair("sent", getTimeString(msg.timestamp, cbuf, sizeof(cbuf))));
-                    objM.push_back(Pair("from", msg.sFromAddress));
-                    objM.push_back(Pair("to", smsgStored.sAddrTo));
-                    objM.push_back(Pair("text", std::string((char*)&msg.vchMessage[0]))); // ugh
+                    objM.push_back(Pair("from", msg.sFromAddress.c_str()));
+                    objM.push_back(Pair("to", msg.sToAddress.c_str()));
+                    objM.push_back(Pair("text", msg.sMessage.c_str()));
                 }
                 else {
                     ostringstream oss;
@@ -680,9 +678,9 @@ Value smsgoutbox(const Array& params, bool fHelp)
                 if (!error) {
                     Object objM;
                     objM.push_back(Pair("sent", getTimeString(msg.timestamp, cbuf, sizeof(cbuf))));
-                    objM.push_back(Pair("from", msg.sFromAddress));
-                    objM.push_back(Pair("to", smsgStored.sAddrTo));
-                    objM.push_back(Pair("text", std::string((char*)&msg.vchMessage[0]))); // ugh
+                    objM.push_back(Pair("from", msg.sFromAddress.c_str()));
+                    objM.push_back(Pair("to", msg.sToAddress.c_str()));
+                    objM.push_back(Pair("text", msg.sMessage.c_str()));
                     
                     result.push_back(objM);
                 }

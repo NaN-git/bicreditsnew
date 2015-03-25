@@ -8,16 +8,15 @@
 #include <leveldb/write_batch.h>
 
 #include "base58.h"
-#include "net.h"
 #include "db.h"
-#include "pubkey.h"
-#include "streams.h"
 #include "ui_interface.h"
 #include "wallet.h"
 #include "lz4/lz4.h"
 
 
 typedef std::vector<unsigned char, secure_allocator<unsigned char> > secure_buffer;
+typedef std::basic_string<char, std::char_traits<char>, secure_allocator<char> > secure_string;
+
 
 const unsigned int SMSG_HDR_LEN         = 84;                // length of unencrypted header, 4 + 4 + 8 + 33 + 3 + 32
 const unsigned int SMSG_PL_HDR_LEN      = 4+33+1+65;         // length of encrypted header in payload
@@ -68,7 +67,6 @@ extern CCriticalSection cs_smsg;            // all except inbox and outbox
 extern CCriticalSection cs_smsgDB;
 
 
-#pragma pack(push, 1)
 struct PayloadHeader {
     unsigned char  cpkS[33]; // public key for reply
     unsigned char  lenPlain[4];
@@ -117,7 +115,7 @@ struct SecureMessageHeader {
         s.read((char*) this, (char*) hash - (char*) this);
     }
 };
-#pragma pack(pop)
+
 
 class SecureMessage : public SecureMessageHeader {
 public:
@@ -144,19 +142,9 @@ class MessageData
 // -- Decrypted SecureMessage data
 public:
     int64_t        timestamp;
-    std::string    sToAddress;
-    std::string    sFromAddress;
-    secure_buffer  vchMessage;         // null terminated plaintext
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream& s, Operation ser_action, int nType, int nVersion) {
-        READWRITE(this->timestamp);
-        READWRITE(this->sToAddress);
-        READWRITE(this->sFromAddress);
-        READWRITE(this->vchMessage);
-    }
+    secure_string  sToAddress;
+    secure_string  sFromAddress;
+    secure_string  sMessage;
 };
 
 
@@ -383,7 +371,7 @@ int SecureMsgValidate(const SecureMessageHeader &smsg, size_t nPayload);
 int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string& addressTo, std::string& message);
 
 int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMessageHeader& smsg, const unsigned char *pPayload, MessageData& msg);
-
+int SecureMsgDecrypt(const SecMsgStored& smsgStored, MessageData &msg, std::string &errorMsg);
 
 
 #endif // SEC_MESSAGE_H
