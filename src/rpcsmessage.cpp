@@ -18,10 +18,8 @@ using namespace std;
 extern void TxToJSON(const CTransaction& tx, const uint256 hashBlock, json_spirit::Object& entry);
 
 
-char* getTimeString(int64_t time, char *cbuf, size_t size) {
-    std::string tmp = DateTimeStrFormat("%Y-%m-%d %H:%M:%S", time);
-    memcpy(cbuf, tmp.c_str(), std::min(size, tmp.size()+1));
-    return cbuf;
+static inline std::string GetTimeString(int64_t time) {
+    return DateTimeStrFormat("%Y-%m-%d %H:%M:%S", time);
 }
 
 Value smsgenable(const Array& params, bool fHelp) {
@@ -546,7 +544,6 @@ Value smsginbox(const Array& params, bool fHelp)
             throw runtime_error("Could not open DB.");
         
         uint32_t nMessages = 0;
-        char cbuf[256];
         
         std::string sPrefix("im");
         unsigned char chKey[18];
@@ -564,8 +561,9 @@ Value smsginbox(const Array& params, bool fHelp)
             delete it;
             dbInbox.TxnCommit();
             
-            snprintf(cbuf, sizeof(cbuf), "Deleted %u messages.", nMessages);
-            return Value::null;
+            ostringstream oss;
+            oss << nMessages << " messages deleted";
+            return oss.str();
         }
         else if (mode == "all" || mode == "unread") {
             int fCheckReadStatus = mode == "unread" ? 1 : 0;
@@ -586,8 +584,8 @@ Value smsginbox(const Array& params, bool fHelp)
                 std::string errorMsg;
                 int error = SecureMsgDecrypt(smsgStored, msg, errorMsg);
                 if (!error) {
-                    objM.push_back(Pair("received", getTimeString(smsgStored.timeReceived, cbuf, sizeof(cbuf))));
-                    objM.push_back(Pair("sent", getTimeString(msg.timestamp, cbuf, sizeof(cbuf))));
+                    objM.push_back(Pair("received", GetTimeString(smsgStored.timeReceived)));
+                    objM.push_back(Pair("sent", GetTimeString(msg.timestamp)));
                     objM.push_back(Pair("from", msg.sFromAddress.c_str()));
                     objM.push_back(Pair("to", msg.sToAddress.c_str()));
                     objM.push_back(Pair("text", msg.sMessage.c_str()));
@@ -651,7 +649,6 @@ Value smsgoutbox(const Array& params, bool fHelp)
             throw runtime_error("Could not open DB.");
         
         uint32_t nMessages = 0;
-        char cbuf[256];
         
         if (mode == "clear") {
             dbOutbox.TxnBegin();
@@ -677,9 +674,9 @@ Value smsgoutbox(const Array& params, bool fHelp)
                 int error = SecureMsgDecrypt(false, smsgStored.sAddrOutbox, smsg, pPayload, msg);
                 if (!error) {
                     Object objM;
-                    objM.push_back(Pair("sent", getTimeString(msg.timestamp, cbuf, sizeof(cbuf))));
+                    objM.push_back(Pair("sent", GetTimeString(msg.timestamp)));
                     objM.push_back(Pair("from", msg.sFromAddress.c_str()));
-                    objM.push_back(Pair("to", msg.sToAddress.c_str()));
+                    objM.push_back(Pair("to", smsgStored.sAddrTo.c_str()));
                     objM.push_back(Pair("text", msg.sMessage.c_str()));
                     
                     result.push_back(objM);
@@ -721,7 +718,6 @@ Value smsgbuckets(const Array& params, bool fHelp)
     
     Object result;
     
-    char cbuf[256];
     if (mode == "stats")
     {
         uint32_t nBuckets = 0;
@@ -749,10 +745,10 @@ Value smsgbuckets(const Array& params, bool fHelp)
                 
                 Object objM;
                 objM.push_back(Pair("bucket", sBucket));
-                objM.push_back(Pair("time", getTimeString(it->first, cbuf, sizeof(cbuf))));
+                objM.push_back(Pair("time", GetTimeString(it->first)));
                 objM.push_back(Pair("no. messages", snContents.str()));
                 objM.push_back(Pair("hash", sHash));
-                objM.push_back(Pair("last changed", getTimeString(it->second.timeChanged, cbuf, sizeof(cbuf))));
+                objM.push_back(Pair("last changed", GetTimeString(it->second.timeChanged)));
                 
                 boost::filesystem::path fullPath = GetDataDir() / "smsgStore" / sFile;
 

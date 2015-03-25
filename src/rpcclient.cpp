@@ -89,6 +89,11 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "estimatepriority", 0 },
     { "prioritisetransaction", 1 },
     { "prioritisetransaction", 2 },
+    
+    { "smsginbox", 1 },
+    { "smsgsend", 3 },
+    { "smsgsendanon", 2 },
+    { "smsgoutbox", 1 },
 };
 
 class CRPCConvertTable

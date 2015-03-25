@@ -818,7 +818,7 @@ int SecureMsgAddWalletAddresses()
     uint32_t nAdded = 0;
     BOOST_FOREACH(const PAIRTYPE(CTxDestination, CAddressBookData)& entry, pwalletMain->mapAddressBook)
     {
-        if (!IsMine(*pwalletMain, entry.first))
+        if (IsMine(*pwalletMain, entry.first) != ISMINE_SPENDABLE)
             continue;
 
         // -- skip addresses for anon outputs
@@ -2817,8 +2817,8 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
 
     // -- create save hash instances
     secure_buffer sha_mem(sizeof(CSHA256) + sizeof(CSHA512) + sizeof(CHMAC_SHA256), 0);
-    CSHA256 &sha256 = *(CSHA256*) &sha_mem[0];
-    CSHA512 &sha512 = *(CSHA512*) (&sha256 + 1);
+    CSHA256 &sha256 = *new (&sha_mem[0]) CSHA256();
+    CSHA512 &sha512 = *new (&sha256 + 1) CSHA512();
 
     // -- make a key pair to which the receiver can respond
     CKey keyS;
@@ -2826,27 +2826,27 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
     CPubKey pubKeyS = keyS.GetPubKey();
 
     // -- hash the timestamp and plaintext
-    secure_buffer msgHash(96+4, 0);
-    sha256.Write((const unsigned char*) &smsg.timestamp, 8);
-    sha256.Write((const unsigned char*) &*message.begin(), message.size());
-    sha256.Finalize(&msgHash[0]);
+    uint256 msgHash;
+    sha256.Write((const unsigned char*) &smsg.timestamp, sizeof(smsg.timestamp)).
+           Write((const unsigned char*) &*message.begin(), message.size()).
+           Finalize(msgHash.begin());
 
     // -- hash some entropy
-    GetRandBytes(&msgHash[32], 16);
-    sha256.Write(&msgHash[32], 16);
+    secure_buffer vchKey(64+4, 0);
+    GetRandBytes(&vchKey[0], 16);
+    sha256.Write(&vchKey[0], 16);
     sha256.Write(pubKeyS.begin(), 33);
-    sha256.Finalize(&msgHash[32]); // use this as key for hmac
+    sha256.Finalize(&vchKey[0]); // use this as key for hmac
 
     // -- derive a new key pair, which is used for the encryption key computation
     CKey keyR;
     while (!keyR.IsValid()) {
-        CHMAC_SHA256 &hmac = *new (&sha512 + 1) CHMAC_SHA256(&msgHash[32], 32);
-        hmac.Write(&msgHash[96], 4); // prepend a counter
+        CHMAC_SHA256 &hmac = *new (&sha512 + 1) CHMAC_SHA256(&vchKey[0], 32);
+        hmac.Write(&vchKey[64], 4); // prepend a counter
         hmac.Write(keyS.begin(), 32);
-        hmac.Finalize(&msgHash[64]);
-        keyR.Set(&msgHash[64], &msgHash[96], true);
-        (*(uint32_t*) &msgHash[64])++;
-        hmac.~CHMAC_SHA256();
+        hmac.Finalize(&vchKey[32]);
+        keyR.Set(&vchKey[32], &vchKey[64], true);
+        (*(uint32_t*) &vchKey[64])++;
     }
     
     // -- Compute a shared secret vchP derived from a new private key keyR and the public key of addressTo
@@ -2924,11 +2924,11 @@ int SecureMsgEncrypt(SecureMessage& smsg, std::string& addressFrom, std::string&
             printf("Could not get private key for addressFrom.\n");
             return 7;
         }
+        printf("private key of %s obtained\n", CBitcreditAddress(ckidFrom).ToString().c_str());
 
         // -- sign the the new public key of keyR with the private key of addressFrom
         std::vector<unsigned char> vchSignature(65);
-        std::vector<unsigned char> hash(msgHash.begin(), msgHash.begin() + 32);
-        keyFrom.SignCompact(uint256(hash), vchSignature);
+        keyFrom.SignCompact(msgHash, vchSignature);
 
         header.sigKeyVersion[0] = ((CBitcreditAddress_B*) &coinAddrFrom)->getVersion(); // vchPayload[0] = coinAddrDest.nVersion;
         memcpy(header.signature, &vchSignature[0], vchSignature.size());
@@ -3062,14 +3062,11 @@ int SecureMsgSend(std::string& addressFrom, std::string& addressTo, std::string&
     BOOST_FOREACH(const PAIRTYPE(CTxDestination, CAddressBookData)& entry, pwalletMain->mapAddressBook)
     {
         // -- get first owned address
-        if (!IsMine(*pwalletMain, entry.first))
+        if (IsMine(*pwalletMain, entry.first) != ISMINE_SPENDABLE)
             continue;
-
-        const CBitcreditAddress& address = entry.first;
-
-        addressOutbox = address.ToString();
-        if (!coinAddrOutbox.SetString(addressOutbox)) // test valid
-            continue;
+        
+        coinAddrOutbox = entry.first;
+        addressOutbox = coinAddrOutbox.ToString();
         break;
     }
 
@@ -3192,9 +3189,10 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
     //    The first 32 bytes of H are called key_e and the last 32 bytes are called key_m.
     secure_buffer vchHashedDec(64); // 512 bits
     secure_buffer sha512_mem(sizeof(CSHA512), 0);
-    CSHA512 &sha512 = *(CSHA512*) &sha512_mem[0];
+    CSHA512 &sha512 = *new (&sha512_mem[0]) CSHA512();
     sha512.Write(&vchP[0], vchP.size());
     sha512.Finalize(&vchHashedDec[0]);
+    sha512.~CSHA512();
 
     // -- Message authentication code of header
     SecureMessageHeader smsg_(smsg.begin());
@@ -3259,23 +3257,24 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
         printf("from anon\n");
     }
     else {
+        uint256 msgHash;
+        CSHA256().Write((const unsigned char*) &smsg.timestamp, 8).
+                  Write((const unsigned char*) message, lenPlain).
+                  Finalize(msgHash.begin());
+        
         CPubKey cpkFromSig;
-        std::vector<unsigned char> vchSig(65);
+        std::vector<unsigned char> vchSig(65, 0);
         memcpy(&vchSig[0], header.signature, vchSig.size());
-        vchSig[0] |= 4;
-        bool valid = cpkFromSig.RecoverCompact(
-            Hash(&smsg.timestamp, &smsg.timestamp + 1, message, message + lenPlain),
-            vchSig
-        );
+        bool valid = cpkFromSig.RecoverCompact(msgHash, vchSig);
         if (!valid) {
             printf("Signature validation failed.\n");
             return 1;
         }
         if (!cpkFromSig.IsCompressed())
             printf("key is not compressed\n");
-        
-        CKeyID ckidFrom(cpkFromSig.GetID());
+
 		// TODO check whether the public key is trusted
+        CKeyID ckidFrom(cpkFromSig.GetID());
         int rv = 5;
         try {
             rv = SecureMsgInsertAddress(ckidFrom, cpkFromSig);
@@ -3296,10 +3295,8 @@ int SecureMsgDecrypt(bool fTestOnly, const std::string& address, const SecureMes
                 printf("Error adding sender public key to db.\n");
                 break;
         }
-
-        CBitcreditAddress coinAddrFrom;
-        coinAddrFrom.Set(ckidFrom);
-        msg.sFromAddress = secure_string(coinAddrFrom.ToString().c_str());
+        
+        msg.sFromAddress = secure_string(CBitcreditAddress(ckidFrom).ToString().c_str());
     }
 
     msg.sToAddress = secure_string(address.c_str());

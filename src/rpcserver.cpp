@@ -369,19 +369,19 @@ static const CRPCCommand vRPCCommands[] =
 #endif
 	
     /* Secure Messaging */
-    { "secureMsg",          "smsgenable",             &smsgenable,             false,     false, 	  false},
-    { "secureMsg" ,         "smsgdisable",            &smsgdisable,            false,     false,	  false},
-    { "secureMsg" ,         "smsglocalkeys",          &smsglocalkeys,          false,     false,	  true },
-    { "secureMsg" ,         "smsgoptions",            &smsgoptions,            false,     false,	  false},
-    { "secureMsg" ,         "smsgscanchain",          &smsgscanchain,          false,     false,	  false},
-    { "secureMsg" ,         "smsgscanbuckets",        &smsgscanbuckets,        false,     false,	  false},
-    { "secureMsg" ,         "smsgaddkey",             &smsgaddkey,             false,     false,	  false},
-    { "secureMsg" ,         "smsggetpubkey",          &smsggetpubkey,          false,     false,	  false},
-    { "secureMsg" ,         "smsgsend",               &smsgsend,               false,     false,	  true },
-    { "secureMsg" ,         "smsgsendanon",           &smsgsendanon,           false,     false,	  true },
-    { "secureMsg" ,         "smsginbox",              &smsginbox,              false,     false,	  true },
-    { "secureMsg" ,         "smsgoutbox",             &smsgoutbox,             false,     false,	  false},
-    { "secureMsg" ,         "smsgbuckets",            &smsgbuckets,            false,     false,	  false},
+    { "secureMsg",          "smsgenable",             &smsgenable,             true,      false, 	  false},
+    { "secureMsg" ,         "smsgdisable",            &smsgdisable,            true,      false,	  false},
+    { "secureMsg" ,         "smsglocalkeys",          &smsglocalkeys,          true,      false,	  true },
+    { "secureMsg" ,         "smsgoptions",            &smsgoptions,            true,      false,	  false},
+    { "secureMsg" ,         "smsgscanchain",          &smsgscanchain,          true,      false,	  false},
+    { "secureMsg" ,         "smsgscanbuckets",        &smsgscanbuckets,        true,      false,	  false},
+    { "secureMsg" ,         "smsgaddkey",             &smsgaddkey,             true,      false,	  false},
+    { "secureMsg" ,         "smsggetpubkey",          &smsggetpubkey,          true,      false,	  false},
+    { "secureMsg" ,         "smsgsend",               &smsgsend,               true,      false,	  true },
+    { "secureMsg" ,         "smsgsendanon",           &smsgsendanon,           true,      false,	  true },
+    { "secureMsg" ,         "smsginbox",              &smsginbox,              true,      false,	  true },
+    { "secureMsg" ,         "smsgoutbox",             &smsgoutbox,             true,      false,	  false},
+    { "secureMsg" ,         "smsgbuckets",            &smsgbuckets,            true,      false,	  false},
 
 };
 
