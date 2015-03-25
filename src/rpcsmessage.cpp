@@ -515,11 +515,10 @@ Value smsgsendanon(const Array& params, bool fHelp)
 
 Value smsginbox(const Array& params, bool fHelp)
 {
-    std::string error_msg = "smsginbox ( all|unread|clear )\n"
-                            "\nDecrypt and display received secure messages in the inbox.\n"
-                            "Warning: clear will delete all messages.";
     if (fHelp || params.size() > 1) // defaults to read
-        throw runtime_error(error_msg);
+        throw runtime_error("smsginbox ( \"all|unread|clear\" )\n"
+                            "\nDecrypt and display received secure messages in the inbox.\n"
+                            "Warning: clear will delete all messages.");
     
     if (!fSecMsgEnabled)
         throw JSONRPCError(RPC_INVALID_REQUEST, "Secure messaging is disabled.");
@@ -609,17 +608,14 @@ Value smsginbox(const Array& params, bool fHelp)
             return result;
         }
     }
-    throw JSONRPCError(RPC_INVALID_PARAMS, error_msg);
-    
-    return Value::null;
+    return smsginbox(params, true);
 };
 
 Value smsgoutbox(const Array& params, bool fHelp)
 {
-	help:
     if (fHelp || params.size() > 1) // defaults to read
         throw runtime_error(
-            "smsgoutbox [all|clear]\n" 
+            "smsgoutbox ( \"all|clear\" )\n" 
             "Decrypt and display all sent messages.\n"
             "Warning: clear will delete all sent messages.");
     
@@ -688,15 +684,13 @@ Value smsgoutbox(const Array& params, bool fHelp)
                     throw runtime_error("Could not decrypt.");
                 nMessages++;
             }
-            delete it;    
-        }
-        else {
-            fHelp = true;
-            goto help;
+            delete it;
+            
+            return result; 
         }
     }
     
-    return result;
+    return smsgoutbox(params, true);
 };
 
 
@@ -704,24 +698,23 @@ Value smsgbuckets(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() > 1)
         throw runtime_error(
-            "smsgbuckets [stats|dump]\n"
+            "smsgbuckets ( \"stats|dump\" )\n"
             "Display some statistics.");
     
     if (!fSecMsgEnabled)
-        throw runtime_error("Secure messaging is disabled.");
+        throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Secure messaging is disabled.");
     
     std::string mode = "stats";
-    if (params.size() > 0)
-    {
+    if (params.size() > 0) {
         mode = params[0].get_str();
-    };
+    }
     
-    Object result;
+    Array result;
     
     if (mode == "stats")
     {
-        uint32_t nBuckets = 0;
-        uint32_t nMessages = 0;
+        uint64_t nBuckets = 0;
+        uint64_t nMessages = 0;
         uint64_t nBytes = 0;
         {
             LOCK(cs_smsg);
@@ -735,19 +728,14 @@ Value smsgbuckets(const Array& params, bool fHelp)
                 std::string sBucket = boost::lexical_cast<std::string>(it->first);
                 std::string sFile = sBucket + "_01.dat";
                 
-                ostringstream snContents;
-                snContents << tokenSet.size();
-                
-                std::string sHash = boost::lexical_cast<std::string>(it->second.hash);
-                
                 nBuckets++;
                 nMessages += tokenSet.size();
                 
                 Object objM;
-                objM.push_back(Pair("bucket", sBucket));
+                objM.push_back(Pair("bucket", (uint64_t) it->first));
                 objM.push_back(Pair("time", GetTimeString(it->first)));
-                objM.push_back(Pair("no. messages", snContents.str()));
-                objM.push_back(Pair("hash", sHash));
+                objM.push_back(Pair("no. messages", tokenSet.size()));
+                objM.push_back(Pair("hash", (uint64_t) it->second.hash));
                 objM.push_back(Pair("last changed", GetTimeString(it->second.timeChanged)));
                 
                 boost::filesystem::path fullPath = GetDataDir() / "smsgStore" / sFile;
@@ -767,63 +755,48 @@ Value smsgbuckets(const Array& params, bool fHelp)
                         uint64_t nFBytes = 0;
                         nFBytes = boost::filesystem::file_size(fullPath);
                         nBytes += nFBytes;
-                        ostringstream bytesReadable;
-                        bytesReadable << nFBytes;
-                        objM.push_back(Pair("file size", bytesReadable.str()));
+                        objM.push_back(Pair("file size", nFBytes));
                     } catch (const boost::filesystem::filesystem_error& ex)
                     {
                         objM.push_back(Pair("file size, error", ex.what()));
                     };
                 };
                 
-                result.push_back(Pair("bucket", objM));
+                result.push_back(objM);
             };
         }; // LOCK(cs_smsg);
         
-        
-        std::string snBuckets = boost::lexical_cast<std::string>(nBuckets);
-        std::string snMessages = boost::lexical_cast<std::string>(nMessages);
-        
         Object objM;
-        objM.push_back(Pair("buckets", snBuckets));
-        objM.push_back(Pair("messages", snMessages));
-        ostringstream bytesReadable;
-        bytesReadable << nBytes;
-        objM.push_back(Pair("size", bytesReadable.str()));
-        result.push_back(Pair("total", objM));
-        
-    } else
-    if (mode == "dump")
-    {
+        objM.push_back(Pair("buckets", result));
+        objM.push_back(Pair("no. buckets", nBuckets));
+        objM.push_back(Pair("no. messages", nMessages));
+        objM.push_back(Pair("size", nBytes));
+
+        return objM;
+    }
+    else if (mode == "dump") {
         {
             LOCK(cs_smsg);
             std::map<int64_t, SecMsgBucket>::iterator it;
             it = smsgBuckets.begin();
             
-            for (it = smsgBuckets.begin(); it != smsgBuckets.end(); ++it)
-            {
+            for (it = smsgBuckets.begin(); it != smsgBuckets.end(); ++it) {
                 std::string sFile = boost::lexical_cast<std::string>(it->first) + "_01.dat";
                 
                 try {
                     boost::filesystem::path fullPath = GetDataDir() / "smsgStore" / sFile;
                     boost::filesystem::remove(fullPath);
-                } catch (const boost::filesystem::filesystem_error& ex)
-                {
+                }
+                catch (const boost::filesystem::filesystem_error& ex) {
                     //objM.push_back(Pair("file size, error", ex.what()));
                     printf("Error removing bucket file %s.\n", ex.what());
-                };
-            };
+                }
+            }
             smsgBuckets.clear();
-        }; // LOCK(cs_smsg);
+        } // LOCK(cs_smsg);
         
-        result.push_back(Pair("result", "Removed all buckets."));
-        
-    } else
-    {
-        result.push_back(Pair("result", "Unknown Mode."));
-        result.push_back(Pair("expected", "[stats|dump]."));
-    };
-    
+        return Value::null;
+    }
 
-    return result;
+    return smsgbuckets(params, true);
 };
